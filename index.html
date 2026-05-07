@@ -450,6 +450,16 @@
       margin-top: 14px;
     }
 
+    .region-overview {
+      margin-top: 14px;
+      padding: 14px 16px;
+      border-radius: 16px;
+      border: 1px solid rgba(37, 23, 13, 0.12);
+      background: rgba(255, 255, 255, 0.78);
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
     .region-chip {
       padding: 12px;
       border-radius: 16px;
@@ -490,7 +500,23 @@
 
     .seed-list {
       display: grid;
+      gap: 12px;
+    }
+
+    .matchup-card {
+      padding: 12px;
+      border-radius: 16px;
+      background: rgba(113, 83, 54, 0.06);
+      border: 1px solid rgba(92, 54, 22, 0.08);
+      display: grid;
       gap: 8px;
+    }
+
+    .matchup-label {
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
     }
 
     .seed-entry {
@@ -531,6 +557,33 @@
       margin-top: 18px;
       font-size: 0.88rem;
       color: var(--muted);
+    }
+
+    .map-toggle {
+      margin-top: 16px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.72);
+      overflow: hidden;
+    }
+
+    .map-toggle summary {
+      list-style: none;
+      cursor: pointer;
+      padding: 14px 16px;
+      font-weight: 800;
+    }
+
+    .map-toggle summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .map-toggle[open] summary {
+      border-bottom: 1px solid var(--line);
+    }
+
+    .map-toggle-body {
+      padding: 0 16px 16px;
     }
 
     .actions {
@@ -919,10 +972,18 @@
           <div class="panel-head">
             <div>
               <h2>Draft Board</h2>
-              <p class="subtle">Complete each bucket before moving to the next one.</p>
+              <p class="subtle">Start by entering the bracket name, then complete each pick bucket.</p>
             </div>
             <span class="pill" id="progressLabel">0 of 15 selected</span>
           </div>
+
+          <div class="field" id="entryNameField">
+            <label for="entryName">Bracket entry name</label>
+            <input class="text-input" id="entryName" type="text" maxlength="60" placeholder="Example: Stephanie">
+            <div class="field-message subtle" id="entryNameMessage"></div>
+          </div>
+
+          <div class="phase-banner" id="entryStartBanner"></div>
 
           <div class="progress">
             <div class="progress-bar" aria-hidden="true">
@@ -937,15 +998,45 @@
         <div class="panel">
           <div class="panel-head">
             <div>
-              <h2>Bracket Map</h2>
-              <p class="subtle">Selected teams glow so users can quickly spot clustering.</p>
+              <h2>Bracket Balance</h2>
+              <p class="subtle">A quick visual check for one-sided drafting.</p>
             </div>
           </div>
-          <div class="bracket-layout" id="bracketLayout"></div>
-          <p class="footer-note">
-            Bracket data is based on the uploaded image. A few cropped labels were inferred from the image:
-            Purdue, Houston, Northern Colorado, and Eastern Kentucky.
-          </p>
+
+          <div class="balance-grid">
+            <div class="balance-card">
+              <strong id="leftCount">0</strong>
+              <span class="subtle">Left side picks</span>
+            </div>
+            <div class="balance-card">
+              <strong id="rightCount">0</strong>
+              <span class="subtle">Right side picks</span>
+            </div>
+          </div>
+
+          <div class="alert good" id="balanceAlert">Balanced start. Add picks to compare both sides.</div>
+
+          <div class="region-distribution" id="regionDistribution"></div>
+          <div class="region-overview" id="regionOverview">Complete all 15 picks to get a diversification summary across the four regions.</div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Bracket Map</h2>
+              <p class="subtle">Open this only if you want to review first-round matchup placement.</p>
+            </div>
+          </div>
+          <details class="map-toggle">
+            <summary>Show bracket map</summary>
+            <div class="map-toggle-body">
+              <div class="bracket-layout" id="bracketLayout"></div>
+              <p class="footer-note">
+                Bracket data is based on the uploaded image. A few cropped labels were inferred from the image:
+                Purdue, Houston, Northern Colorado, and Eastern Kentucky.
+              </p>
+            </div>
+          </details>
         </div>
       </div>
 
@@ -954,7 +1045,7 @@
           <div class="panel-head">
             <div>
               <h2>Current Entry</h2>
-              <p class="subtle">Build a 15-team group, then save it as one person&apos;s submission.</p>
+              <p class="subtle">Review this bracket, then submit it once all 15 teams are selected.</p>
             </div>
           </div>
 
@@ -968,14 +1059,6 @@
               <span class="subtle">Live points</span>
             </div>
           </div>
-
-          <div class="field" id="entryNameField">
-            <label for="entryName">Entrant name</label>
-            <input class="text-input" id="entryName" type="text" maxlength="60" placeholder="Example: Stephanie">
-            <div class="field-message subtle" id="entryNameMessage"></div>
-          </div>
-
-          <div class="phase-banner" id="entryStartBanner"></div>
 
           <div class="pick-list" id="pickList"></div>
 
@@ -1039,29 +1122,6 @@
           </div>
         </div>
 
-        <div class="panel">
-          <div class="panel-head">
-            <div>
-              <h2>Bracket Balance</h2>
-              <p class="subtle">A quick visual check for one-sided drafting.</p>
-            </div>
-          </div>
-
-          <div class="balance-grid">
-            <div class="balance-card">
-              <strong id="leftCount">0</strong>
-              <span class="subtle">Left side picks</span>
-            </div>
-            <div class="balance-card">
-              <strong id="rightCount">0</strong>
-              <span class="subtle">Right side picks</span>
-            </div>
-          </div>
-
-          <div class="alert good" id="balanceAlert">Balanced start. Add picks to compare both sides.</div>
-
-          <div class="region-distribution" id="regionDistribution"></div>
-        </div>
       </aside>
     </section>
   </main>
@@ -1789,6 +1849,26 @@
         div.innerHTML = `<span>${item.region}</span><strong>${item.count}</strong>`;
         distribution.appendChild(div);
       });
+
+      const overview = document.getElementById("regionOverview");
+      if (selectedTeams.length < 15) {
+        overview.innerHTML = "Complete all 15 picks to get a diversification summary across the four regions.";
+        return;
+      }
+
+      const counts = regionCounts.map((item) => item.count);
+      const maxCount = Math.max(...counts);
+      const minCount = Math.min(...counts);
+      const strongestRegions = regionCounts.filter((item) => item.count === maxCount).map((item) => item.region);
+      const thinnestRegions = regionCounts.filter((item) => item.count === minCount).map((item) => item.region);
+
+      if (maxCount - minCount <= 1) {
+        overview.innerHTML = "<strong>Nicely diversified.</strong> Your picks are spread evenly across the South, West, Midwest, and East. That gives you balanced exposure and avoids overloading one region of the bracket.";
+      } else if (maxCount >= 6) {
+        overview.innerHTML = `<strong>Heavy regional concentration.</strong> Your picks are consolidated most heavily in ${strongestRegions.join(", ")} with ${maxCount} teams. If that region breaks badly, a large share of your bracket value could disappear quickly.`;
+      } else {
+        overview.innerHTML = `<strong>Moderate regional lean.</strong> Your picks are fairly diversified overall, but ${strongestRegions.join(", ")} holds the most exposure with ${maxCount} teams. ${thinnestRegions.join(", ")} is your lightest region, so your bracket is not perfectly balanced.`;
+      }
     }
 
     function renderBracket() {
@@ -1801,10 +1881,14 @@
         regionCard.innerHTML = `<h3>${region}</h3><div class="seed-list"></div>`;
         const seedList = regionCard.querySelector(".seed-list");
 
-        teams
-          .filter((team) => team.region === region)
-          .sort((a, b) => a.seed - b.seed)
-          .forEach((team) => {
+        firstRoundSeedPairs.forEach(([highSeed, lowSeed]) => {
+          const highTeam = teams.find((team) => team.region === region && team.seed === highSeed);
+          const lowTeam = teams.find((team) => team.region === region && team.seed === lowSeed);
+          const matchup = document.createElement("div");
+          matchup.className = "matchup-card";
+          matchup.innerHTML = `<div class="matchup-label">${highSeed} vs ${lowSeed}</div>`;
+
+          [highTeam, lowTeam].forEach((team) => {
             const selected = state.selected.includes(team.id);
             const entry = document.createElement("div");
             entry.className = `seed-entry${selected ? " selected" : ""}`;
@@ -1813,8 +1897,11 @@
               <span>${team.team}</span>
               <span class="slot-side">${team.side}</span>
             `;
-            seedList.appendChild(entry);
+            matchup.appendChild(entry);
           });
+
+          seedList.appendChild(matchup);
+        });
 
         bracket.appendChild(regionCard);
       });
