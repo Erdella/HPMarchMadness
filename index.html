@@ -579,6 +579,22 @@
       font-weight: 700;
     }
 
+    .field-message {
+      min-height: 1.2em;
+      font-size: 0.88rem;
+    }
+
+    .field.is-highlighted .text-input {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 4px rgba(239, 108, 26, 0.18);
+      background: #fff8ef;
+    }
+
+    .field.is-highlighted .field-message {
+      color: var(--accent-deep);
+      font-weight: 700;
+    }
+
     .text-input {
       width: 100%;
       border-radius: 14px;
@@ -720,6 +736,21 @@
       padding: 10px 12px;
       border-radius: 14px;
       background: rgba(113, 83, 54, 0.07);
+    }
+
+    .phase-banner {
+      margin-top: 14px;
+      padding: 14px 16px;
+      border-radius: 16px;
+      border: 1px solid rgba(37, 23, 13, 0.12);
+      background: rgba(255, 255, 255, 0.72);
+      color: var(--muted);
+    }
+
+    .phase-banner strong {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--ink);
     }
 
     @media (max-width: 980px) {
@@ -872,12 +903,15 @@
           <div class="panel-head">
             <div>
               <h2>Game Results</h2>
-              <p class="subtle">Submit actual winners and the pool standings will update automatically.</p>
+              <p class="subtle">Enter actual winners after bracket submissions are closed.</p>
             </div>
           </div>
           <div class="actions">
             <button class="button secondary" type="button" id="clearResults">Clear all results</button>
+            <button class="button primary" type="button" id="closeSubmissions">Close submissions and unlock results</button>
+            <button class="button secondary" type="button" id="reopenSubmissions">Reopen submissions</button>
           </div>
+          <div class="phase-banner" id="resultsPhaseBanner"></div>
           <div class="round-grid" id="resultsGrid"></div>
         </div>
 
@@ -916,9 +950,10 @@
             </div>
           </div>
 
-          <div class="field">
+          <div class="field" id="entryNameField">
             <label for="entryName">Entrant name</label>
             <input class="text-input" id="entryName" type="text" maxlength="60" placeholder="Example: Stephanie">
+            <div class="field-message subtle" id="entryNameMessage"></div>
           </div>
 
           <div class="pick-list" id="pickList"></div>
@@ -927,6 +962,8 @@
             <button class="button primary" type="button" id="saveEntry">Save this entry</button>
             <button class="button secondary" type="button" id="resetDraft">Reset draft</button>
           </div>
+
+          <div class="phase-banner" id="submissionPhaseBanner"></div>
 
           <div class="saved-list" id="savedEntries"></div>
         </div>
@@ -975,7 +1012,8 @@
     const regionOrder = ["South", "West", "Midwest", "East"];
     const storageKeys = {
       entries: "march-madness-entries-v1",
-      results: "march-madness-results-v1"
+      results: "march-madness-results-v1",
+      submissionsClosed: "march-madness-submissions-closed-v1"
     };
 
     const teams = [
@@ -1069,7 +1107,8 @@
       entrantName: "",
       entries: loadFromStorage(storageKeys.entries, []),
       results: loadFromStorage(storageKeys.results, {}),
-      collapsedRounds: {}
+      collapsedRounds: {},
+      submissionsClosed: loadFromStorage(storageKeys.submissionsClosed, false)
     };
 
     function loadFromStorage(key, fallback) {
@@ -1084,6 +1123,7 @@
     function persistState() {
       localStorage.setItem(storageKeys.entries, JSON.stringify(state.entries));
       localStorage.setItem(storageKeys.results, JSON.stringify(state.results));
+      localStorage.setItem(storageKeys.submissionsClosed, JSON.stringify(state.submissionsClosed));
     }
 
     function buildGames() {
@@ -1219,6 +1259,10 @@
     }
 
     function canSelectTeam(team) {
+      if (state.submissionsClosed) {
+        return false;
+      }
+
       if (state.selected.includes(team.id)) {
         return true;
       }
@@ -1265,7 +1309,7 @@
     function saveEntry() {
       const name = state.entrantName.trim();
       if (!name) {
-        window.alert("Enter a name before saving this entry.");
+        promptForName();
         return;
       }
 
@@ -1288,12 +1332,20 @@
     }
 
     function deleteEntry(entryId) {
+      if (state.submissionsClosed) {
+        return;
+      }
+
       state.entries = state.entries.filter((entry) => entry.id !== entryId);
       persistState();
       renderSummary();
     }
 
     function updateResult(gameId, winnerId) {
+      if (!state.submissionsClosed) {
+        return;
+      }
+
       if (!winnerId) {
         delete state.results[gameId];
       } else {
@@ -1313,9 +1365,46 @@
     }
 
     function clearResults() {
+      if (!state.submissionsClosed) {
+        return;
+      }
+
       state.results = {};
       persistState();
       renderSummary();
+    }
+
+    function promptForName() {
+      const nameField = document.getElementById("entryNameField");
+      const nameInput = document.getElementById("entryName");
+      const message = document.getElementById("entryNameMessage");
+      nameField.classList.add("is-highlighted");
+      message.textContent = "Please enter your name before saving this bracket.";
+      nameField.scrollIntoView({ behavior: "smooth", block: "center" });
+      nameInput.focus();
+      window.setTimeout(() => nameField.classList.remove("is-highlighted"), 2400);
+    }
+
+    function closeSubmissions() {
+      if (state.selected.length > 0) {
+        window.alert("Save or reset the current draft before closing submissions.");
+        return;
+      }
+
+      if (!state.entries.length) {
+        window.alert("Save at least one bracket before closing submissions.");
+        return;
+      }
+
+      state.submissionsClosed = true;
+      persistState();
+      render();
+    }
+
+    function reopenSubmissions() {
+      state.submissionsClosed = false;
+      persistState();
+      render();
     }
 
     function isMobileViewport() {
@@ -1395,11 +1484,26 @@
       document.getElementById("progressFill").style.width = `${(selectedTeams.length / 15) * 100}%`;
 
       const nextIndex = buckets.findIndex((bucket) => getBucketCount(bucket.id) < bucket.required);
-      const nextHint = nextIndex === -1
+      const nextHint = state.submissionsClosed
+        ? "Submissions are closed. Game results now drive the live scoring."
+        : nextIndex === -1
         ? "Draft complete. Save this entry to add it to the standings."
         : `Next up: ${buckets[nextIndex].label}.`;
       document.getElementById("nextStepHint").textContent = nextHint;
       document.getElementById("entryName").value = state.entrantName;
+      document.getElementById("entryName").disabled = state.submissionsClosed;
+      document.getElementById("saveEntry").disabled = state.submissionsClosed;
+      document.getElementById("resetDraft").disabled = state.submissionsClosed;
+
+      const nameMessage = document.getElementById("entryNameMessage");
+      if (!document.getElementById("entryNameField").classList.contains("is-highlighted")) {
+        nameMessage.textContent = state.submissionsClosed ? "Submissions are closed." : "";
+      }
+
+      const submissionBanner = document.getElementById("submissionPhaseBanner");
+      submissionBanner.innerHTML = state.submissionsClosed
+        ? "<strong>Submissions closed</strong>Brackets are locked. You can review saved entries and track scores from game results."
+        : "<strong>Submissions open</strong>Save every bracket before closing submissions and entering winners.";
 
       const pickList = document.getElementById("pickList");
       pickList.innerHTML = "";
@@ -1461,7 +1565,7 @@
             <div class="subtle">${entry.teams.length} teams saved</div>
           </div>
           <div class="standing-score">${score}</div>
-          <button type="button">Delete</button>
+          <button type="button" ${state.submissionsClosed ? "disabled" : ""}>Delete</button>
         `;
         row.querySelector("button").addEventListener("click", () => deleteEntry(entry.id));
         savedEntries.appendChild(row);
@@ -1570,8 +1674,25 @@
     }
 
     function renderResults() {
-      const winnerMap = getWinnerMap();
       const resultsGrid = document.getElementById("resultsGrid");
+      const resultsBanner = document.getElementById("resultsPhaseBanner");
+      const clearResultsButton = document.getElementById("clearResults");
+      const closeSubmissionsButton = document.getElementById("closeSubmissions");
+      const reopenSubmissionsButton = document.getElementById("reopenSubmissions");
+
+      clearResultsButton.style.display = state.submissionsClosed ? "inline-flex" : "none";
+      reopenSubmissionsButton.style.display = state.submissionsClosed ? "inline-flex" : "none";
+      closeSubmissionsButton.style.display = state.submissionsClosed ? "none" : "inline-flex";
+
+      if (!state.submissionsClosed) {
+        resultsBanner.innerHTML = "<strong>Results locked</strong>Enter all brackets first. When submissions are complete, close submissions to unlock winner entry and live standings updates.";
+        resultsGrid.innerHTML = `<div class="empty-state">Game winner entry will appear here after submissions are closed.</div>`;
+        return;
+      }
+
+      resultsBanner.innerHTML = "<strong>Results unlocked</strong>Choose winners round by round and the standings will update automatically.";
+      clearResultsButton.disabled = false;
+      const winnerMap = getWinnerMap();
       resultsGrid.innerHTML = "";
 
       roundLabels.forEach((roundLabel, roundIndex) => {
@@ -1644,10 +1765,14 @@
 
     document.getElementById("entryName").addEventListener("input", (event) => {
       state.entrantName = event.target.value;
+      document.getElementById("entryNameField").classList.remove("is-highlighted");
+      document.getElementById("entryNameMessage").textContent = "";
     });
 
     document.getElementById("saveEntry").addEventListener("click", saveEntry);
     document.getElementById("clearResults").addEventListener("click", clearResults);
+    document.getElementById("closeSubmissions").addEventListener("click", closeSubmissions);
+    document.getElementById("reopenSubmissions").addEventListener("click", reopenSubmissions);
 
     render();
   </script>
