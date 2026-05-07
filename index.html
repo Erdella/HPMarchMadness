@@ -753,6 +753,37 @@
       color: var(--ink);
     }
 
+    .admin-box {
+      margin-top: 16px;
+      padding: 16px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.72);
+      display: grid;
+      gap: 12px;
+    }
+
+    .admin-login-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .admin-status {
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+
+    .admin-tools {
+      display: grid;
+      gap: 14px;
+      margin-top: 10px;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
     @media (max-width: 980px) {
       .hero-grid,
       .layout {
@@ -845,6 +876,10 @@
       .slot-side {
         grid-column: 2;
       }
+
+      .admin-login-grid {
+        grid-template-columns: 1fr;
+      }
     }
   </style>
 </head>
@@ -902,22 +937,6 @@
         <div class="panel">
           <div class="panel-head">
             <div>
-              <h2>Game Results</h2>
-              <p class="subtle">Enter actual winners after bracket submissions are closed.</p>
-            </div>
-          </div>
-          <div class="actions">
-            <button class="button secondary" type="button" id="clearResults">Clear all results</button>
-            <button class="button primary" type="button" id="closeSubmissions">Close submissions and unlock results</button>
-            <button class="button secondary" type="button" id="reopenSubmissions">Reopen submissions</button>
-          </div>
-          <div class="phase-banner" id="resultsPhaseBanner"></div>
-          <div class="round-grid" id="resultsGrid"></div>
-        </div>
-
-        <div class="panel">
-          <div class="panel-head">
-            <div>
               <h2>Bracket Map</h2>
               <p class="subtle">Selected teams glow so users can quickly spot clustering.</p>
             </div>
@@ -956,10 +975,12 @@
             <div class="field-message subtle" id="entryNameMessage"></div>
           </div>
 
+          <div class="phase-banner" id="entryStartBanner"></div>
+
           <div class="pick-list" id="pickList"></div>
 
           <div class="actions">
-            <button class="button primary" type="button" id="saveEntry">Save this entry</button>
+            <button class="button primary" type="button" id="saveEntry">Submit this bracket</button>
             <button class="button secondary" type="button" id="resetDraft">Reset draft</button>
           </div>
 
@@ -977,6 +998,45 @@
           </div>
 
           <div class="standings-list" id="standingsList"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Super User Console</h2>
+              <p class="subtle">Only super users can close entries and enter actual game winners.</p>
+            </div>
+          </div>
+
+          <div class="admin-box">
+            <div class="admin-status" id="adminStatus">Super user access is locked.</div>
+            <div class="admin-login-grid" id="adminLoginGrid">
+              <div class="field">
+                <label for="adminUser">Super user</label>
+                <select id="adminUser">
+                  <option value="">Choose a super user</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="adminPasscode">Passcode</label>
+                <input class="text-input" id="adminPasscode" type="password" placeholder="Enter passcode">
+              </div>
+            </div>
+            <div class="actions">
+              <button class="button primary" type="button" id="adminLogin">Unlock super user tools</button>
+              <button class="button secondary hidden" type="button" id="adminLogout">Log out</button>
+            </div>
+          </div>
+
+          <div class="admin-tools hidden" id="adminTools">
+            <div class="actions">
+              <button class="button secondary" type="button" id="clearResults">Clear all results</button>
+              <button class="button primary" type="button" id="closeSubmissions">Close submissions and unlock results</button>
+              <button class="button secondary" type="button" id="reopenSubmissions">Reopen submissions</button>
+            </div>
+            <div class="phase-banner" id="resultsPhaseBanner"></div>
+            <div class="round-grid" id="resultsGrid"></div>
+          </div>
         </div>
 
         <div class="panel">
@@ -1013,8 +1073,13 @@
     const storageKeys = {
       entries: "march-madness-entries-v1",
       results: "march-madness-results-v1",
-      submissionsClosed: "march-madness-submissions-closed-v1"
+      submissionsClosed: "march-madness-submissions-closed-v1",
+      adminSession: "march-madness-admin-session-v1"
     };
+    const superUsers = [
+      { id: "henry", label: "Henry Pearson", passcode: "henry2026" },
+      { id: "co-admin", label: "Co-Admin", passcode: "march2026" }
+    ];
 
     const teams = [
       { id: "south-1-purdue", team: "Purdue", seed: 1, region: "South", side: "Left" },
@@ -1108,7 +1173,8 @@
       entries: loadFromStorage(storageKeys.entries, []),
       results: loadFromStorage(storageKeys.results, {}),
       collapsedRounds: {},
-      submissionsClosed: loadFromStorage(storageKeys.submissionsClosed, false)
+      submissionsClosed: loadFromStorage(storageKeys.submissionsClosed, false),
+      adminUserId: loadFromStorage(storageKeys.adminSession, "")
     };
 
     function loadFromStorage(key, fallback) {
@@ -1124,6 +1190,19 @@
       localStorage.setItem(storageKeys.entries, JSON.stringify(state.entries));
       localStorage.setItem(storageKeys.results, JSON.stringify(state.results));
       localStorage.setItem(storageKeys.submissionsClosed, JSON.stringify(state.submissionsClosed));
+      localStorage.setItem(storageKeys.adminSession, JSON.stringify(state.adminUserId));
+    }
+
+    function hasEntrantName() {
+      return Boolean(state.entrantName.trim());
+    }
+
+    function isSuperUserAuthenticated() {
+      return superUsers.some((user) => user.id === state.adminUserId);
+    }
+
+    function getCurrentSuperUser() {
+      return superUsers.find((user) => user.id === state.adminUserId) || null;
     }
 
     function buildGames() {
@@ -1259,6 +1338,10 @@
     }
 
     function canSelectTeam(team) {
+      if (!hasEntrantName()) {
+        return false;
+      }
+
       if (state.submissionsClosed) {
         return false;
       }
@@ -1386,6 +1469,10 @@
     }
 
     function closeSubmissions() {
+      if (!isSuperUserAuthenticated()) {
+        return;
+      }
+
       if (state.selected.length > 0) {
         window.alert("Save or reset the current draft before closing submissions.");
         return;
@@ -1402,9 +1489,55 @@
     }
 
     function reopenSubmissions() {
+      if (!isSuperUserAuthenticated()) {
+        return;
+      }
+
       state.submissionsClosed = false;
       persistState();
       render();
+    }
+
+    function loginSuperUser() {
+      const userId = document.getElementById("adminUser").value;
+      const passcode = document.getElementById("adminPasscode").value;
+      const match = superUsers.find((user) => user.id === userId && user.passcode === passcode);
+
+      if (!match) {
+        window.alert("That super user login did not match.");
+        document.getElementById("adminPasscode").focus();
+        return;
+      }
+
+      state.adminUserId = match.id;
+      document.getElementById("adminPasscode").value = "";
+      persistState();
+      renderResults();
+    }
+
+    function logoutSuperUser() {
+      state.adminUserId = "";
+      document.getElementById("adminPasscode").value = "";
+      persistState();
+      renderResults();
+    }
+
+    function renderAdminLoginOptions() {
+      const adminUserSelect = document.getElementById("adminUser");
+      const currentValue = adminUserSelect.value;
+      adminUserSelect.innerHTML = `<option value="">Choose a super user</option>`;
+      superUsers.forEach((user) => {
+        const option = document.createElement("option");
+        option.value = user.id;
+        option.textContent = user.label;
+        adminUserSelect.appendChild(option);
+      });
+
+      if (currentValue && superUsers.some((user) => user.id === currentValue)) {
+        adminUserSelect.value = currentValue;
+      } else if (state.adminUserId && superUsers.some((user) => user.id === state.adminUserId)) {
+        adminUserSelect.value = state.adminUserId;
+      }
     }
 
     function isMobileViewport() {
@@ -1426,6 +1559,11 @@
 
     function renderBuckets() {
       const bucketList = document.getElementById("bucketList");
+      if (!hasEntrantName()) {
+        bucketList.innerHTML = `<div class="empty-state">Enter your name first, then the draft board will unlock for team selection.</div>`;
+        return;
+      }
+
       const currentIndex = activeBucketIndex();
       bucketList.innerHTML = "";
 
@@ -1486,6 +1624,8 @@
       const nextIndex = buckets.findIndex((bucket) => getBucketCount(bucket.id) < bucket.required);
       const nextHint = state.submissionsClosed
         ? "Submissions are closed. Game results now drive the live scoring."
+        : !hasEntrantName()
+        ? "Enter your name to unlock the draft board."
         : nextIndex === -1
         ? "Draft complete. Save this entry to add it to the standings."
         : `Next up: ${buckets[nextIndex].label}.`;
@@ -1500,6 +1640,11 @@
         nameMessage.textContent = state.submissionsClosed ? "Submissions are closed." : "";
       }
 
+      const entryStartBanner = document.getElementById("entryStartBanner");
+      entryStartBanner.innerHTML = hasEntrantName()
+        ? `<strong>Entry owner set</strong>${state.entrantName.trim()} can now draft and submit this bracket.`
+        : "<strong>Name required first</strong>Add the entrant's name before team selection begins.";
+
       const submissionBanner = document.getElementById("submissionPhaseBanner");
       submissionBanner.innerHTML = state.submissionsClosed
         ? "<strong>Submissions closed</strong>Brackets are locked. You can review saved entries and track scores from game results."
@@ -1508,7 +1653,9 @@
       const pickList = document.getElementById("pickList");
       pickList.innerHTML = "";
 
-      if (!selectedTeams.length) {
+      if (!hasEntrantName()) {
+        pickList.innerHTML = `<div class="empty-state">This bracket will stay empty until an entrant name is added above.</div>`;
+      } else if (!selectedTeams.length) {
         pickList.innerHTML = `<div class="empty-state">No teams drafted yet. Start with a No. 1 seed.</div>`;
       } else {
         selectedTeams
@@ -1679,6 +1826,26 @@
       const clearResultsButton = document.getElementById("clearResults");
       const closeSubmissionsButton = document.getElementById("closeSubmissions");
       const reopenSubmissionsButton = document.getElementById("reopenSubmissions");
+      const adminTools = document.getElementById("adminTools");
+      const adminStatus = document.getElementById("adminStatus");
+      const adminLoginGrid = document.getElementById("adminLoginGrid");
+      const adminLoginButton = document.getElementById("adminLogin");
+      const adminLogoutButton = document.getElementById("adminLogout");
+      const currentAdmin = getCurrentSuperUser();
+
+      adminTools.classList.toggle("hidden", !isSuperUserAuthenticated());
+      adminLoginGrid.classList.toggle("hidden", isSuperUserAuthenticated());
+      adminLoginButton.classList.toggle("hidden", isSuperUserAuthenticated());
+      adminLogoutButton.classList.toggle("hidden", !isSuperUserAuthenticated());
+      adminStatus.textContent = isSuperUserAuthenticated()
+        ? `Signed in as ${currentAdmin.label}.`
+        : "Super user access is locked. Entrants do not see game-winner controls.";
+
+      if (!isSuperUserAuthenticated()) {
+        resultsBanner.innerHTML = "";
+        resultsGrid.innerHTML = "";
+        return;
+      }
 
       clearResultsButton.style.display = state.submissionsClosed ? "inline-flex" : "none";
       reopenSubmissionsButton.style.display = state.submissionsClosed ? "inline-flex" : "none";
@@ -1753,6 +1920,7 @@
     }
 
     function render() {
+      renderAdminLoginOptions();
       renderBuckets();
       renderSummary();
     }
@@ -1767,12 +1935,20 @@
       state.entrantName = event.target.value;
       document.getElementById("entryNameField").classList.remove("is-highlighted");
       document.getElementById("entryNameMessage").textContent = "";
+      render();
     });
 
     document.getElementById("saveEntry").addEventListener("click", saveEntry);
     document.getElementById("clearResults").addEventListener("click", clearResults);
     document.getElementById("closeSubmissions").addEventListener("click", closeSubmissions);
     document.getElementById("reopenSubmissions").addEventListener("click", reopenSubmissions);
+    document.getElementById("adminLogin").addEventListener("click", loginSuperUser);
+    document.getElementById("adminLogout").addEventListener("click", logoutSuperUser);
+    document.getElementById("adminPasscode").addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        loginSuperUser();
+      }
+    });
 
     render();
   </script>
