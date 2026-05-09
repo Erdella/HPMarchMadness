@@ -96,24 +96,35 @@ export interface AuthVariables {
   isAdmin: boolean;
 }
 
+/** Internal: resolve user from request, or return an error envelope. */
+type ResolveResult =
+  | { ok: true; user: User; isAdmin: boolean }
+  | { ok: false; error: string; status: 401 };
+
+async function resolveAuth(c: Context): Promise<ResolveResult> {
+  const token = readToken(c);
+  if (!token) return { ok: false, error: 'unauthenticated', status: 401 };
+
+  const payload = await verifySession(token);
+  if (!payload) return { ok: false, error: 'invalid_or_expired_session', status: 401 };
+
+  const env = loadEnv();
+  const [user] = await db.select().from(users).where(eq(users.id, payload.sub)).limit(1);
+  if (!user) return { ok: false, error: 'user_not_found', status: 401 };
+
+  return { ok: true, user, isAdmin: isAdminEmail(env, user.email) };
+}
+
 /**
  * Reads `Authorization: Bearer <jwt>` (or `?session=` query param as a fallback,
  * useful for the magic-link landing flow). On success, attaches `user` and
  * `isAdmin` to ctx.var. On failure, returns 401.
  */
 export const requireAuth: MiddlewareHandler<{ Variables: AuthVariables }> = async (c, next) => {
-  const token = readToken(c);
-  if (!token) return c.json({ error: 'unauthenticated' }, 401);
-
-  const payload = await verifySession(token);
-  if (!payload) return c.json({ error: 'invalid_or_expired_session' }, 401);
-
-  const env = loadEnv();
-  const [user] = await db.select().from(users).where(eq(users.id, payload.sub)).limit(1);
-  if (!user) return c.json({ error: 'user_not_found' }, 401);
-
-  c.set('user', user);
-  c.set('isAdmin', isAdminEmail(env, user.email));
+  const result = await resolveAuth(c);
+  if (!result.ok) return c.json({ error: result.error }, result.status);
+  c.set('user', result.user);
+  c.set('isAdmin', result.isAdmin);
   await next();
 };
 
@@ -122,13 +133,12 @@ export const requireAuth: MiddlewareHandler<{ Variables: AuthVariables }> = asyn
  * ADMIN_EMAILS. Use on admin routes (results entry, lock submissions, etc).
  */
 export const requireAdmin: MiddlewareHandler<{ Variables: AuthVariables }> = async (c, next) => {
-  // Run requireAuth first.
-  await requireAuth(c, async () => {
-    if (!c.get('isAdmin')) {
-      return c.json({ error: 'forbidden' }, 403);
-    }
-    await next();
-  });
+  const result = await resolveAuth(c);
+  if (!result.ok) return c.json({ error: result.error }, result.status);
+  if (!result.isAdmin) return c.json({ error: 'forbidden' }, 403);
+  c.set('user', result.user);
+  c.set('isAdmin', result.isAdmin);
+  await next();
 };
 
 function readToken(c: Context): string | null {

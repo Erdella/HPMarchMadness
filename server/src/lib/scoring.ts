@@ -48,7 +48,7 @@ export function scoreEntry(
     if (!winner) continue;
     if (pickedSet.has(winner)) {
       const pts = POINTS_BY_ROUND_INDEX[game.round] ?? 0;
-      byRound[game.round] += pts;
+      byRound[game.round] = (byRound[game.round] ?? 0) + pts;
     }
   }
 
