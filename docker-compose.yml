@@ -1,12 +1,17 @@
 # =============================================================================
-# HP March Madness — full stack for Proxmox LXC + Cloudflare Tunnel
+# HP March Madness — Proxmox LXC stack
 #
 # Services:
 #   postgres     — Postgres 16, persistent volume `postgres_data`
-#   server       — Node API (built from ./server/Dockerfile)
-#   cloudflared  — Cloudflare Tunnel daemon, exposes the server publicly
-#                  via api.hpmarchmadness.org without inbound port-forwarding
+#   server       — Node API (built from ./server/Dockerfile), bound to
+#                  127.0.0.1:8080 on the LXC so the host's existing
+#                  cloudflared can route to it
 #   backup       — Daily pg_dump into ./backups, prunes >30 days old
+#
+# Cloudflare Tunnel is intentionally NOT a service here — you already have
+# cloudflared installed on the LXC. Configure its Public Hostname mapping in
+# the Cloudflare dashboard:
+#     api.hpmarchmadness.org  →  HTTP  →  http://localhost:8080
 #
 # All secrets come from .env (copy .env.docker.example → .env and fill in).
 # =============================================================================
@@ -46,15 +51,10 @@ services:
       TOURNAMENT_YEAR: ${TOURNAMENT_YEAR:-2026}
       NODE_ENV: production
       PORT: "8080"
-    expose:
-      - "8080"
-
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    restart: unless-stopped
-    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:?CLOUDFLARE_TUNNEL_TOKEN is required}
-    depends_on:
-      - server
+    # Bind to localhost only — the host's cloudflared (already installed) can
+    # reach this at http://localhost:8080 without exposing it on the LAN.
+    ports:
+      - "127.0.0.1:8080:8080"
 
   backup:
     image: postgres:16-alpine
