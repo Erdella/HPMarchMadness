@@ -11,8 +11,13 @@ FROM node:20-alpine
 WORKDIR /app
 
 # Install dependencies first to get good layer caching.
+# Uses `npm install` rather than `npm ci` so this works whether or not a
+# package-lock.json has been committed. If you want deterministic builds,
+# run `npm install` locally in /server, commit the resulting lockfile,
+# then this still works (npm install is a no-op when the lockfile is
+# already up to date).
 COPY package.json package-lock.json* ./
-RUN npm ci
+RUN npm install --no-audit --no-fund
 
 # Copy source and build.
 COPY tsconfig.json drizzle.config.ts ./
