@@ -22,12 +22,15 @@ RUN npm install --no-audit --no-fund
 # Copy source and build.
 COPY tsconfig.json drizzle.config.ts ./
 COPY src ./src
+COPY drizzle ./drizzle
 RUN npm run build
 
 ENV NODE_ENV=production
 ENV PORT=8080
 EXPOSE 8080
 
-# On boot: sync the schema (idempotent, safe on a fresh DB and on subsequent
-# starts where there are no schema changes), then start the server.
-CMD ["sh", "-c", "npm run db:push && node dist/index.js"]
+# On boot: apply any pending migrations from /drizzle (the runtime migrator
+# is non-interactive and idempotent — re-runs are safe), then start the
+# server. Switched away from `db:push` because that command prompts for
+# confirmation when run in non-TTY environments like Docker.
+CMD ["sh", "-c", "node dist/db/migrate.js && node dist/index.js"]
