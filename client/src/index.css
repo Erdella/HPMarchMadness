@@ -1,0 +1,104 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---------------------------------------------------------------------------
+   ASU Sun Devils design tokens.
+   Source-of-truth color values; Tailwind classes reference them via the
+   palette in tailwind.config.ts. Anything that needs to read them from CSS
+   (e.g. inline styles, third-party widgets) reads them here.
+   --------------------------------------------------------------------------- */
+:root {
+  --asu-maroon: #8C1D40;
+  --asu-maroon-deep: #5C0E2A;
+  --asu-gold: #FFC627;
+  --asu-gold-deep: #B88A0A;
+
+  --ink-900: #0F0709;
+  --ink-800: #160A0F;
+  --ink-700: #1C1015;
+  --ink-600: #22191D;
+
+  --paper: #E5EAF2;
+  --paper-dim: rgba(229, 234, 242, 0.7);
+  --paper-faint: rgba(229, 234, 242, 0.45);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--ink-900);
+  color: var(--paper);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Selection styling that fits the palette */
+::selection {
+  background: var(--asu-gold);
+  color: var(--ink-900);
+}
+
+/* Form inputs default to dark on dark; override here so they inherit our look. */
+input,
+textarea,
+select,
+button {
+  font-family: inherit;
+}
+
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--asu-gold);
+  outline-offset: 2px;
+}
+
+/* Reusable component classes — kept tiny so most styling stays Tailwind. */
+@layer components {
+  .display-heading {
+    @apply font-display tracking-wider text-gold-400;
+  }
+
+  .pill {
+    @apply inline-flex items-center gap-1 rounded-sm px-2 py-0.5 font-mono text-xs uppercase tracking-wider;
+  }
+
+  .card {
+    @apply rounded-sm border border-ink-700 bg-ink-800 p-4;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center rounded-sm bg-maroon-500 px-4 py-2 font-medium text-gold-400 transition-colors hover:bg-maroon-600 disabled:opacity-50;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center rounded-sm border border-ink-600 bg-transparent px-4 py-2 font-medium text-paper transition-colors hover:bg-ink-700 disabled:opacity-50;
+  }
+
+  .input {
+    @apply w-full rounded-sm border border-ink-600 bg-ink-800 px-3 py-2 text-paper placeholder:text-paper-faint;
+  }
+}
+
+/* Convenience class to mirror the --paper tokens since Tailwind doesn't
+   expose them. Used for muted body copy. */
+.text-paper {
+  color: var(--paper);
+}
+.text-paper-dim {
+  color: var(--paper-dim);
+}
+.text-paper-faint {
+  color: var(--paper-faint);
+}
+.placeholder\:text-paper-faint::placeholder {
+  color: var(--paper-faint);
+}
