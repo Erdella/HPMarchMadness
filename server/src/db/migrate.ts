@@ -19,10 +19,10 @@ import { loadEnv } from '../lib/env.js';
 async function main() {
   const env = loadEnv();
 
+  // Match client.ts: SSL is opt-in via the connection string only.
   const needsSsl =
     env.DATABASE_URL.includes('sslmode=require') ||
-    env.DATABASE_URL.includes('render.com') ||
-    env.NODE_ENV === 'production';
+    env.DATABASE_URL.includes('render.com');
 
   // Migrator wants its own short-lived connection pool.
   const sql = postgres(env.DATABASE_URL, {

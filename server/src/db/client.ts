@@ -12,13 +12,14 @@ import * as schema from './schema.js';
 
 const env = loadEnv();
 
-// Render's internal Postgres URL doesn't require SSL on the same network,
-// but external/managed Postgres usually does. We enable SSL when the URL
-// looks external (contains "render.com" or explicit ?sslmode=require).
+// SSL is opt-in via the connection string. Local Postgres (Docker, dev) and
+// internal Postgres on the same private network don't speak SSL by default,
+// so don't blanket-enable it for "production" — that breaks self-hosted
+// setups. Set ?sslmode=require in DATABASE_URL when you actually need it
+// (e.g. managed Postgres providers like Render or Supabase).
 const needsSsl =
   env.DATABASE_URL.includes('sslmode=require') ||
-  env.DATABASE_URL.includes('render.com') ||
-  env.NODE_ENV === 'production';
+  env.DATABASE_URL.includes('render.com');
 
 export const sql = postgres(env.DATABASE_URL, {
   ssl: needsSsl ? 'require' : false,
