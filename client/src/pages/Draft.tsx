@@ -249,7 +249,6 @@ export function Draft() {
         entries={myEntries}
         editingId={editingId}
         justSavedId={justSavedId}
-        teamMap={teamMap}
         buckets={config.seedBuckets}
         onEdit={editEntry}
         onDelete={deleteEntry}
@@ -360,7 +359,6 @@ function YourEntries({
   entries,
   editingId,
   justSavedId,
-  teamMap,
   buckets,
   onEdit,
   onDelete,
@@ -369,7 +367,6 @@ function YourEntries({
   entries: Entry[];
   editingId: string | null;
   justSavedId: string | null;
-  teamMap: ReadonlyMap<string, Team>;
   buckets: readonly { id: string; label: string; seeds: number[]; pickCount: number }[];
   onEdit(entry: Entry): void;
   onDelete(entry: Entry): void;

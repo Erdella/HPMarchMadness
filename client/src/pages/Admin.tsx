@@ -18,7 +18,6 @@ import { useConfig } from '../lib/config';
 import type { AdminSettings, Entry, Game, ResultRow, Team } from '../lib/types';
 
 export function Admin() {
-  const config = useConfig();
   const [teams, setTeams] = useState<Team[]>([]);
   const [games, setGames] = useState<Game[]>([]);
   const [entries, setEntries] = useState<Entry[]>([]);
