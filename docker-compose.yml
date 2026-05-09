@@ -1,0 +1,95 @@
+# =============================================================================
+# HP March Madness — full stack for Proxmox LXC + Cloudflare Tunnel
+#
+# Services:
+#   postgres     — Postgres 16, persistent volume `postgres_data`
+#   server       — Node API (built from ./server/Dockerfile)
+#   cloudflared  — Cloudflare Tunnel daemon, exposes the server publicly
+#                  via api.hpmarchmadness.org without inbound port-forwarding
+#   backup       — Daily pg_dump into ./backups, prunes >30 days old
+#
+# All secrets come from .env (copy .env.docker.example → .env and fill in).
+# =============================================================================
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-hpmm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-hpmm}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-hpmm}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    image: hp-march-madness-server:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-hpmm}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-hpmm}
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
+      RESEND_API_KEY: ${RESEND_API_KEY:?RESEND_API_KEY is required}
+      EMAIL_FROM: ${EMAIL_FROM:-HP March Madness <onboarding@resend.dev>}
+      ADMIN_EMAILS: ${ADMIN_EMAILS:?ADMIN_EMAILS is required}
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:?FRONTEND_ORIGIN is required}
+      TOURNAMENT_YEAR: ${TOURNAMENT_YEAR:-2026}
+      NODE_ENV: production
+      PORT: "8080"
+    expose:
+      - "8080"
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:?CLOUDFLARE_TUNNEL_TOKEN is required}
+    depends_on:
+      - server
+
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGUSER: ${POSTGRES_USER:-hpmm}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGHOST: postgres
+      PGDATABASE: ${POSTGRES_DB:-hpmm}
+    volumes:
+      - ./backups:/backups
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -e
+        mkdir -p /backups
+        echo "Backup daemon starting. First dump in 60s..."
+        sleep 60
+        while true; do
+          ts=$$(date -u +%Y%m%d-%H%M%S)
+          file="/backups/hpmm-$$ts.dump"
+          if pg_dump -Fc > "$$file"; then
+            echo "Backup written: $$file ($$(wc -c < "$$file") bytes)"
+          else
+            echo "Backup FAILED at $$ts"
+            rm -f "$$file"
+          fi
+          # Retain 30 days of dumps.
+          find /backups -name 'hpmm-*.dump' -mtime +30 -delete
+          sleep 86400
+        done
+
+volumes:
+  postgres_data:

@@ -1,0 +1,17 @@
+# Environment files — never commit secrets
+.env
+.env.local
+.env.*.local
+
+# Backups
+backups/
+
+# Dependencies / build output (also ignored within server/ and client/)
+node_modules/
+dist/
+
+# OS / editor cruft
+.DS_Store
+*.log
+.idea/
+.vscode/
