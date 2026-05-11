@@ -167,17 +167,62 @@ const TEAMS_2026: Team[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// Year registry. To add 2027, define TEAMS_2027 and add it here.
+// Year registry. To add 2027 in code, define TEAMS_2027 and add it here.
+// For the production workflow, admins use the Bracket Setup admin page to
+// upload teams to the DB — that overrides this code-side fallback.
 // ---------------------------------------------------------------------------
 
 const TEAMS_BY_YEAR: Record<number, readonly Team[]> = {
   2026: TEAMS_2026,
 };
 
+// ---------------------------------------------------------------------------
+// DB-backed override cache.
+//
+// Loaded at server startup (see initTeamsCache below) and refreshed whenever
+// the admin saves a new bracket. We keep this in-memory cache so the rest of
+// the codebase can call `teamsForYear()` synchronously without threading
+// async/await through scoring, validation, and every route.
+// ---------------------------------------------------------------------------
+
+let DB_OVERRIDE: Record<number, readonly Team[]> = {};
+
+/**
+ * Replace the in-memory override for a single year. Called by the bracket
+ * admin endpoints after a successful save.
+ */
+export function setTeamsOverride(year: number, teams: readonly Team[]): void {
+  DB_OVERRIDE = { ...DB_OVERRIDE, [year]: teams };
+}
+
+/**
+ * Replace the entire override cache. Called once at server startup.
+ */
+export function replaceTeamsOverride(byYear: Record<number, readonly Team[]>): void {
+  DB_OVERRIDE = { ...byYear };
+}
+
+/**
+ * Look up the 64-team field for a given year.
+ *   1. Prefer the DB-backed override if admins have uploaded one
+ *   2. Otherwise fall back to the code-side TEAMS_BY_YEAR
+ *   3. Otherwise throw — the year is genuinely unknown
+ */
 export function teamsForYear(year: number): readonly Team[] {
-  const t = TEAMS_BY_YEAR[year];
-  if (!t) throw new Error(`No bracket configured for year ${year}`);
-  return t;
+  const override = DB_OVERRIDE[year];
+  if (override && override.length > 0) return override;
+  const fallback = TEAMS_BY_YEAR[year];
+  if (!fallback) {
+    throw new Error(
+      `No bracket configured for year ${year} (no DB rows, no code-side fallback).`,
+    );
+  }
+  return fallback;
+}
+
+/** Has an admin uploaded a bracket for this year? Useful for the admin UI. */
+export function hasDbBracket(year: number): boolean {
+  return Boolean(DB_OVERRIDE[year]?.length);
 }
 
 // ---------------------------------------------------------------------------

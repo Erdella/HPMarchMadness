@@ -10,7 +10,9 @@ import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
-import { sql as dbSql } from './db/client.js';
+import { replaceTeamsOverride, type Team } from './config/teams.js';
+import { db, sql as dbSql } from './db/client.js';
+import { teams as teamsTable } from './db/schema.js';
 import { loadEnv } from './lib/env.js';
 import { adminRoutes } from './routes/admin.js';
 import { authRoutes } from './routes/auth.js';
@@ -66,9 +68,41 @@ app.route('/api/results', resultsRoutes);
 app.route('/api/admin', adminRoutes);
 app.route('/api/leaderboard', leaderboardRoutes);
 
+// -----------------------------------------------------------------------------
+// Load any admin-uploaded brackets from DB into the in-memory cache, then boot.
+// -----------------------------------------------------------------------------
+async function bootTeamsCache(): Promise<void> {
+  try {
+    const rows = await db.select().from(teamsTable);
+    const byYear: Record<number, Team[]> = {};
+    for (const r of rows) {
+      const list = byYear[r.year] ?? (byYear[r.year] = []);
+      list.push({
+        id: r.id,
+        name: r.name,
+        seed: r.seed,
+        region: r.region as Team['region'],
+        side: r.side as Team['side'],
+      });
+    }
+    replaceTeamsOverride(byYear);
+    const years = Object.keys(byYear);
+    if (years.length > 0) {
+      console.log(`Bracket cache: loaded ${rows.length} teams across ${years.length} year(s) — ${years.join(', ')}`);
+    } else {
+      console.log('Bracket cache: empty (using code-side fallback in config/teams.ts)');
+    }
+  } catch (err) {
+    console.error('Failed to prime bracket cache; falling back to code defaults.', err);
+  }
+}
+
 const port = env.PORT;
-serve({ fetch: app.fetch, port }, (info) => {
-  console.log(`API listening on http://localhost:${info.port}`);
+
+bootTeamsCache().then(() => {
+  serve({ fetch: app.fetch, port }, (info) => {
+    console.log(`API listening on http://localhost:${info.port}`);
+  });
 });
 
 export default app;

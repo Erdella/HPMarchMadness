@@ -11,13 +11,14 @@
  * the actual tournament unfolds.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { ApiError, apiFetch } from '../lib/api';
 import { gameOptions, gamesByRound } from '../lib/bracket';
 import { useConfig } from '../lib/config';
 import type { AdminSettings, Entry, Game, ResultRow, Team } from '../lib/types';
 
 export function Admin() {
+  const config = useConfig();
   const [teams, setTeams] = useState<Team[]>([]);
   const [games, setGames] = useState<Game[]>([]);
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -218,6 +219,9 @@ export function Admin() {
         ))}
       </section>
 
+      {/* Bracket setup */}
+      <BracketSetup defaultYear={config.year} onSaved={(newTeams) => setTeams(newTeams)} />
+
       {/* Entries dashboard */}
       <section className="flex flex-col gap-4">
         <h2 className="font-display text-lg tracking-wider text-gold-400">Entries</h2>
@@ -269,6 +273,144 @@ export function Admin() {
         </div>
       </section>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Bracket setup — paste 64 teams to (re)configure a year's tournament field.
+// ---------------------------------------------------------------------------
+
+const BRACKET_PLACEHOLDER = `# Paste 64 lines: Region, Seed, Team Name
+# Regions: South, West, Midwest, East
+#
+# Example:
+# South,1,Purdue
+# South,16,LIU/Little Rock
+# South,8,Creighton
+# ...
+
+`;
+
+interface BracketImportError {
+  line: number;
+  message: string;
+}
+
+function BracketSetup({
+  defaultYear,
+  onSaved,
+}: {
+  defaultYear: number;
+  onSaved(teams: Team[]): void;
+}) {
+  const [year, setYear] = useState<number>(defaultYear);
+  const [text, setText] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [errors, setErrors] = useState<BracketImportError[]>([]);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [serverError, setServerError] = useState<string | null>(null);
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    setSubmitting(true);
+    setErrors([]);
+    setSuccess(null);
+    setServerError(null);
+    try {
+      const res = await apiFetch<{ year: number; count: number; teams: Team[] }>(
+        '/api/admin/bracket',
+        { method: 'PUT', body: { year, text } },
+      );
+      setSuccess(`Saved ${res.count} teams for ${res.year}.`);
+      onSaved(res.teams);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 400 && err.body && typeof err.body === 'object') {
+        const body = err.body as { error?: string; issues?: BracketImportError[] };
+        if (body.error === 'validation_failed' && Array.isArray(body.issues)) {
+          setErrors(body.issues);
+        } else {
+          setServerError(err.message);
+        }
+      } else {
+        setServerError(err instanceof Error ? err.message : 'Unknown error');
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <section className="flex flex-col gap-4">
+      <h2 className="font-display text-lg tracking-wider text-gold-400">Bracket setup</h2>
+      <p className="text-sm text-paper-dim">
+        Paste the Selection Sunday bracket for any tournament year. Format:{' '}
+        <span className="font-mono">Region,Seed,Name</span> — one team per line, 64 teams total
+        (16 per region across South / West / Midwest / East). Saving overwrites the existing
+        bracket for that year — entries already submitted with old team IDs will lose their
+        scoring continuity, so only do this before the tournament starts.
+      </p>
+
+      <form className="card flex flex-col gap-3" onSubmit={onSubmit}>
+        <label className="flex flex-col gap-1 sm:w-32">
+          <span className="font-mono text-[10px] uppercase tracking-widest text-paper-faint">Year</span>
+          <input
+            type="number"
+            min={2024}
+            max={2100}
+            className="input"
+            value={year}
+            onChange={(e) => setYear(Number(e.target.value) || defaultYear)}
+            disabled={submitting}
+          />
+        </label>
+
+        <label className="flex flex-col gap-1">
+          <span className="font-mono text-[10px] uppercase tracking-widest text-paper-faint">
+            Teams (paste 64 lines)
+          </span>
+          <textarea
+            className="input min-h-[280px] font-mono text-xs"
+            placeholder={BRACKET_PLACEHOLDER}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            disabled={submitting}
+            spellCheck={false}
+          />
+        </label>
+
+        {errors.length > 0 && (
+          <div className="card border-red-400/50 bg-red-400/5">
+            <div className="font-mono text-[10px] uppercase tracking-widest text-red-400">
+              {errors.length} problem{errors.length === 1 ? '' : 's'}
+            </div>
+            <ul className="mt-2 flex flex-col gap-1 text-xs text-red-400">
+              {errors.slice(0, 20).map((err, i) => (
+                <li key={i} className="font-mono">
+                  {err.line > 0 ? `line ${err.line}: ` : ''}
+                  {err.message}
+                </li>
+              ))}
+              {errors.length > 20 && (
+                <li className="text-paper-faint">… and {errors.length - 20} more</li>
+              )}
+            </ul>
+          </div>
+        )}
+
+        {serverError && <div className="text-sm text-red-400">{serverError}</div>}
+        {success && <div className="text-sm text-gold-400">{success}</div>}
+
+        <div className="flex items-center justify-between gap-3">
+          <span className="font-mono text-[11px] uppercase tracking-widest text-paper-faint">
+            {text.split(/\r?\n/).filter((l) => l.trim() && !l.trim().startsWith('#')).length} non-blank
+            lines
+          </span>
+          <button type="submit" className="btn-primary" disabled={submitting || !text.trim()}>
+            {submitting ? 'Saving…' : `Save bracket for ${year}`}
+          </button>
+        </div>
+      </form>
+    </section>
   );
 }
 

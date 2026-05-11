@@ -11,9 +11,11 @@
 import { and, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
+import { setTeamsOverride, teamsForYear, type Team } from '../config/teams.js';
 import { db } from '../db/client.js';
-import { appSettings, entries } from '../db/schema.js';
+import { appSettings, entries, teams as teamsTable } from '../db/schema.js';
 import { requireAdmin, requireAuth, type AuthVariables } from '../lib/auth.js';
+import { parseBracketImport } from '../lib/bracketImport.js';
 import { loadEnv } from '../lib/env.js';
 
 const PaymentPatchBody = z.object({
@@ -123,6 +125,81 @@ adminRoutes.patch('/entries/:id/payment', requireAdmin, async (c) => {
 
   const [updated] = await db.update(entries).set(patch).where(eq(entries.id, id)).returning();
   return c.json({ entry: updated });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/admin/bracket   — admin only — returns current bracket roster
+// ---------------------------------------------------------------------------
+adminRoutes.get('/bracket', requireAdmin, async (c) => {
+  const env = loadEnv();
+  const yearParam = c.req.query('year');
+  const year = yearParam ? Number.parseInt(yearParam, 10) : env.TOURNAMENT_YEAR;
+  if (!Number.isFinite(year)) {
+    return c.json({ error: 'invalid_year' }, 400);
+  }
+
+  try {
+    const list = teamsForYear(year);
+    return c.json({
+      year,
+      hasUploaded: list.length > 0,
+      teams: list,
+    });
+  } catch {
+    // No bracket configured at all (neither DB nor code).
+    return c.json({ year, hasUploaded: false, teams: [] });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PUT /api/admin/bracket   — admin only — replace bracket for a year
+//
+// Body: { year: number, text: string }
+//   The `text` is the raw pasted CSV-ish input (see lib/bracketImport.ts for
+//   the accepted format). Server parses + validates + persists atomically.
+// ---------------------------------------------------------------------------
+const PutBracketBody = z.object({
+  year: z.number().int().min(2024).max(2100),
+  text: z.string().min(1).max(20_000),
+});
+
+adminRoutes.put('/bracket', requireAdmin, async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const parsed = PutBracketBody.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: 'invalid_input', issues: parsed.error.issues }, 400);
+  }
+
+  const result = parseBracketImport(parsed.data.text);
+  if (!result.ok) {
+    return c.json({ error: 'validation_failed', issues: result.errors }, 400);
+  }
+
+  const { year } = parsed.data;
+  const newTeams: Team[] = result.teams;
+
+  // Replace atomically: delete existing year + insert new rows in one transaction.
+  await db.transaction(async (tx) => {
+    await tx.delete(teamsTable).where(eq(teamsTable.year, year));
+    if (newTeams.length > 0) {
+      await tx.insert(teamsTable).values(
+        newTeams.map((t) => ({
+          id: t.id,
+          year,
+          seed: t.seed,
+          region: t.region,
+          side: t.side,
+          name: t.name,
+        })),
+      );
+    }
+  });
+
+  // Refresh the in-memory cache so synchronous teamsForYear() sees the change
+  // without a server restart.
+  setTeamsOverride(year, newTeams);
+
+  return c.json({ ok: true, year, count: newTeams.length, teams: newTeams });
 });
 
 // ---------------------------------------------------------------------------

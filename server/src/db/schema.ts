@@ -140,6 +140,38 @@ export type Result = typeof results.$inferSelect;
 export type NewResult = typeof results.$inferInsert;
 
 // ---------------------------------------------------------------------------
+// teams — admin-managed bracket roster, per year
+//
+// When rows exist for a given year, they override the code-side TEAMS_BY_YEAR
+// fallback in config/teams.ts. Admins populate this via the Bracket Setup
+// page each Selection Sunday — no code change or redeploy required.
+// ---------------------------------------------------------------------------
+export const teams = pgTable(
+  'teams',
+  {
+    id: text('id').notNull(),
+    year: integer('year').notNull(),
+    seed: integer('seed').notNull(),
+    region: text('region').notNull(),
+    side: text('side').notNull(),
+    name: text('name').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.year, t.id] }),
+    yearRegionSeedUnique: uniqueIndex('teams_year_region_seed_unique').on(
+      t.year,
+      t.region,
+      t.seed,
+    ),
+    yearIdx: index('teams_year_idx').on(t.year),
+  }),
+);
+
+export type TeamRow = typeof teams.$inferSelect;
+export type NewTeamRow = typeof teams.$inferInsert;
+
+// ---------------------------------------------------------------------------
 // app_settings — small key/value store, scoped per year
 // ---------------------------------------------------------------------------
 // Common keys we use:
