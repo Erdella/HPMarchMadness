@@ -13,9 +13,10 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { setTeamsOverride, teamsForYear, type Team } from '../config/teams.js';
 import { db } from '../db/client.js';
-import { appSettings, entries, teams as teamsTable } from '../db/schema.js';
+import { appSettings, entries, teams as teamsTable, users } from '../db/schema.js';
 import { requireAdmin, requireAuth, type AuthVariables } from '../lib/auth.js';
 import { parseBracketImport } from '../lib/bracketImport.js';
+import { parseEntriesImport } from '../lib/entriesImport.js';
 import { loadEnv } from '../lib/env.js';
 
 const PaymentPatchBody = z.object({
@@ -200,6 +201,88 @@ adminRoutes.put('/bracket', requireAdmin, async (c) => {
   setTeamsOverride(year, newTeams);
 
   return c.json({ ok: true, year, count: newTeams.length, teams: newTeams });
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/admin/import/entries   — admin only — bulk-import historical entries
+//
+// Body: { year: number, text: string }
+//   The `text` is a tab-separated paste from a Google Sheet Form Responses tab.
+//   Server parses each row, resolves team strings to IDs against the year's
+//   bracket, finds-or-creates users by email, and inserts entries atomically.
+//
+// Behavior on conflict:
+//   - Wipes any existing entries for the given year before inserting.
+//     This makes re-imports idempotent — fix typos, paste again.
+// ---------------------------------------------------------------------------
+const ImportEntriesBody = z.object({
+  year: z.number().int().min(2000).max(2100),
+  text: z.string().min(1).max(200_000),
+});
+
+adminRoutes.post('/import/entries', requireAdmin, async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const parsed = ImportEntriesBody.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: 'invalid_input', issues: parsed.error.issues }, 400);
+  }
+  const { year, text } = parsed.data;
+
+  let yearTeams: readonly Team[] = [];
+  try {
+    yearTeams = teamsForYear(year);
+  } catch {
+    return c.json(
+      {
+        error: 'no_bracket_for_year',
+        message: `No bracket configured for ${year}. Upload teams via Bracket Setup first.`,
+      },
+      400,
+    );
+  }
+
+  const result = parseEntriesImport(text, year, yearTeams);
+  if (!result.ok) {
+    return c.json({ error: 'validation_failed', issues: result.errors }, 400);
+  }
+
+  // Look up or create users by email (deduped across the import).
+  const emailToUserId = new Map<string, string>();
+  await db.transaction(async (tx) => {
+    // Wipe existing entries for the year so re-imports are idempotent.
+    await tx.delete(entries).where(eq(entries.year, year));
+
+    for (const e of result.entries) {
+      let userId = emailToUserId.get(e.email);
+      if (!userId) {
+        const [existing] = await tx.select().from(users).where(eq(users.email, e.email)).limit(1);
+        if (existing) {
+          userId = existing.id;
+        } else {
+          const [created] = await tx.insert(users).values({ email: e.email }).returning();
+          if (!created) throw new Error(`Failed to create user ${e.email}`);
+          userId = created.id;
+        }
+        emailToUserId.set(e.email, userId);
+      }
+
+      await tx.insert(entries).values({
+        userId,
+        year,
+        displayName: e.displayName,
+        picks: e.picks,
+        paymentMethod: e.paymentMethod,
+        paymentMethodNote: e.paymentMethodNote,
+      });
+    }
+  });
+
+  return c.json({
+    ok: true,
+    year,
+    imported: result.entries.length,
+    users: emailToUserId.size,
+  });
 });
 
 // ---------------------------------------------------------------------------

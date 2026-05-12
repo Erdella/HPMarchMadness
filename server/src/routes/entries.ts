@@ -24,6 +24,7 @@ import { appSettings, entries } from '../db/schema.js';
 import { requireAuth, type AuthVariables } from '../lib/auth.js';
 import { loadEnv } from '../lib/env.js';
 import { validatePicks } from '../lib/validation.js';
+import { readYear } from '../lib/year.js';
 
 const PicksSchema = z.array(z.string().min(1)).min(1);
 const PaymentMethodSchema = z.enum(PAYMENT_METHODS);
@@ -102,9 +103,10 @@ entriesRoutes.post('/', async (c) => {
 // GET /api/entries
 // ---------------------------------------------------------------------------
 entriesRoutes.get('/', async (c) => {
-  const env = loadEnv();
   const isAdmin = c.get('isAdmin');
-  const year = env.TOURNAMENT_YEAR;
+  const y = readYear(c);
+  if (!y.ok) return y.response;
+  const year = y.year;
 
   const rows = await db
     .select()
@@ -132,13 +134,13 @@ entriesRoutes.get('/', async (c) => {
 // GET /api/entries/me
 // ---------------------------------------------------------------------------
 entriesRoutes.get('/me', async (c) => {
-  const env = loadEnv();
   const user = c.get('user');
-  const year = env.TOURNAMENT_YEAR;
+  const y = readYear(c);
+  if (!y.ok) return y.response;
   const rows = await db
     .select()
     .from(entries)
-    .where(and(eq(entries.userId, user.id), eq(entries.year, year)))
+    .where(and(eq(entries.userId, user.id), eq(entries.year, y.year)))
     .orderBy(desc(entries.submittedAt));
   return c.json({ entries: rows });
 });

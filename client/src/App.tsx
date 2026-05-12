@@ -14,6 +14,7 @@ import { Layout } from './components/Layout';
 import { RequireAuth } from './components/RequireAuth';
 import { AuthProvider } from './lib/auth';
 import { ConfigGate, ConfigProvider } from './lib/config';
+import { YearProvider } from './lib/year';
 import { Admin } from './pages/Admin';
 import { AuthLanding } from './pages/AuthLanding';
 import { Draft } from './pages/Draft';
@@ -26,6 +27,7 @@ export function App() {
     <ConfigProvider>
       <ConfigGate>
         <AuthProvider>
+          <YearProvider>
           <BrowserRouter>
             <Routes>
               <Route element={<Layout />}>
@@ -69,6 +71,7 @@ export function App() {
               </Route>
             </Routes>
           </BrowserRouter>
+          </YearProvider>
         </AuthProvider>
       </ConfigGate>
     </ConfigProvider>

@@ -31,11 +31,13 @@ import {
   type BucketCount,
 } from '../lib/pickValidation';
 import type { Entry, PaymentMethod, Region, Team } from '../lib/types';
+import { useYear } from '../lib/year';
 
 const REGIONS: readonly Region[] = ['South', 'West', 'Midwest', 'East'];
 
 export function Draft() {
   const config = useConfig();
+  const { selectedYear, isViewingHistory } = useYear();
 
   const [teams, setTeams] = useState<Team[]>([]);
   const [myEntries, setMyEntries] = useState<Entry[]>([]);
@@ -55,20 +57,24 @@ export function Draft() {
   const [justSavedId, setJustSavedId] = useState<string | null>(null);
 
   // -------------------------------------------------------------------------
-  // Boot
+  // Boot — refetches when the selected year changes
   // -------------------------------------------------------------------------
   useEffect(() => {
+    if (!selectedYear) return;
     let cancelled = false;
+    setLoading(true);
+    setBootError(null);
+    // Clear stale state when switching years.
+    setMyEntries([]);
+    setEditingId(null);
+    setPicks(new Set());
+    setDisplayName('');
+    setPaymentMethodNote('');
+    setJustSavedId(null);
+
     Promise.all([
-      apiFetch<{ teams: Team[] }>('/api/config/teams'),
-      apiFetch<{ entries: Entry[] }>('/api/entries/me'),
-      // Settings is admin-only — call it but tolerate 403 silently.
-      apiFetch<{ settings: { submissions_closed?: boolean } }>('/api/admin/settings').catch(
-        () => null,
-      ),
-      // Try to detect submissions_closed for non-admins via attempting POST?
-      // Cheaper: just hit a hypothetical settings probe — skip for now and
-      // rely on the server's 403 to surface it on submit.
+      apiFetch<{ teams: Team[] }>(`/api/config/teams?year=${selectedYear}`),
+      apiFetch<{ entries: Entry[] }>(`/api/entries/me?year=${selectedYear}`),
     ])
       .then(([t, e]) => {
         if (cancelled) return;
@@ -84,7 +90,7 @@ export function Draft() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [selectedYear]);
 
   // -------------------------------------------------------------------------
   // Derived
@@ -102,6 +108,7 @@ export function Draft() {
 
   const canSubmit =
     !submitting &&
+    !isViewingHistory &&
     displayName.trim().length > 0 &&
     allBucketsSatisfied(bucketCounts);
 
@@ -242,6 +249,14 @@ export function Draft() {
       {submissionsClosed && (
         <div className="card border-red-400/40 text-sm text-red-400">
           Submissions are closed. Existing entries are locked.
+        </div>
+      )}
+
+      {isViewingHistory && (
+        <div className="card border-gold-400/40 text-sm text-paper-dim">
+          You're viewing <span className="font-mono text-gold-400">{selectedYear}</span> as
+          history. Submit and edit are disabled. Switch to the current year in the header to
+          make changes.
         </div>
       )}
 

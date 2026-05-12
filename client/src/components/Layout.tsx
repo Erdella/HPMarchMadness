@@ -9,10 +9,12 @@
 import { Link, NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { useConfig } from '../lib/config';
+import { useYear } from '../lib/year';
 
 export function Layout() {
   const config = useConfig();
   const { status, user, isAdmin, signOut } = useAuth();
+  const { selectedYear, availableYears, setYear, isViewingHistory } = useYear();
 
   return (
     <div className="flex min-h-screen flex-col bg-ink-900 text-paper">
@@ -35,6 +37,13 @@ export function Layout() {
               <NavTab to="/draft" label="Draft" />
               <NavTab to="/leaderboard" label="Leaderboard" />
               {isAdmin && <NavTab to="/admin" label="Admin" />}
+              {availableYears.length > 1 && (
+                <YearSelector
+                  selectedYear={selectedYear}
+                  options={availableYears}
+                  onChange={setYear}
+                />
+              )}
               <span className="hidden font-mono text-xs text-paper-faint sm:inline">
                 {user?.email}
               </span>
@@ -48,6 +57,11 @@ export function Layout() {
             </nav>
           )}
         </div>
+        {isViewingHistory && status === 'authenticated' && (
+          <div className="border-t border-maroon-700 bg-maroon-700/30 px-4 py-1.5 text-center font-mono text-[10px] uppercase tracking-widest text-gold-400 sm:px-6">
+            Viewing history · {selectedYear} · read-only
+          </div>
+        )}
       </header>
 
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6">
@@ -66,6 +80,32 @@ export function Layout() {
         </a>
       </footer>
     </div>
+  );
+}
+
+function YearSelector({
+  selectedYear,
+  options,
+  onChange,
+}: {
+  selectedYear: number;
+  options: { year: number; isCurrent: boolean }[];
+  onChange(year: number): void;
+}) {
+  return (
+    <select
+      className="rounded-sm border border-ink-700 bg-ink-800 px-2 py-1 font-mono text-xs uppercase tracking-wider text-paper-dim transition-colors hover:bg-ink-700"
+      value={selectedYear}
+      onChange={(e) => onChange(Number(e.target.value))}
+      aria-label="Select tournament year"
+    >
+      {options.map((opt) => (
+        <option key={opt.year} value={opt.year}>
+          {opt.year}
+          {opt.isCurrent ? ' (live)' : ''}
+        </option>
+      ))}
+    </select>
   );
 }
 

@@ -222,6 +222,9 @@ export function Admin() {
       {/* Bracket setup */}
       <BracketSetup defaultYear={config.year} onSaved={(newTeams) => setTeams(newTeams)} />
 
+      {/* Historical entries import */}
+      <EntriesImport defaultYear={config.year} />
+
       {/* Entries dashboard */}
       <section className="flex flex-col gap-4">
         <h2 className="font-display text-lg tracking-wider text-gold-400">Entries</h2>
@@ -407,6 +410,137 @@ function BracketSetup({
           </span>
           <button type="submit" className="btn-primary" disabled={submitting || !text.trim()}>
             {submitting ? 'Saving…' : `Save bracket for ${year}`}
+          </button>
+        </div>
+      </form>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Historical entries import — paste a past year's Google Sheet rows.
+// ---------------------------------------------------------------------------
+
+const ENTRIES_IMPORT_PLACEHOLDER = `# Paste Form Responses rows from a Google Sheet (tab-separated).
+# Each row: Timestamp <tab> Name <tab> Email <tab> #1 picks <tab>
+#           #2-3 picks <tab> #4-7 picks <tab> #8-11 picks <tab>
+#           #12-16 picks <tab> Payment
+#
+# A header row is auto-detected and skipped.
+# Re-importing replaces ALL entries for the selected year.
+`;
+
+interface EntriesImportIssue {
+  rowNumber: number;
+  message: string;
+}
+
+function EntriesImport({ defaultYear }: { defaultYear: number }) {
+  const [year, setYear] = useState<number>(defaultYear);
+  const [text, setText] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [errors, setErrors] = useState<EntriesImportIssue[]>([]);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [serverError, setServerError] = useState<string | null>(null);
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    setSubmitting(true);
+    setErrors([]);
+    setSuccess(null);
+    setServerError(null);
+    try {
+      const res = await apiFetch<{ year: number; imported: number; users: number }>(
+        '/api/admin/import/entries',
+        { method: 'POST', body: { year, text } },
+      );
+      setSuccess(`Imported ${res.imported} entries (${res.users} users) for ${res.year}.`);
+      setText('');
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 400 && err.body && typeof err.body === 'object') {
+        const body = err.body as { error?: string; message?: string; issues?: EntriesImportIssue[] };
+        if (body.error === 'validation_failed' && Array.isArray(body.issues)) {
+          setErrors(body.issues);
+        } else if (body.error === 'no_bracket_for_year') {
+          setServerError(body.message ?? 'No bracket found for that year.');
+        } else {
+          setServerError(err.message);
+        }
+      } else {
+        setServerError(err instanceof Error ? err.message : 'Unknown error');
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <section className="flex flex-col gap-4">
+      <h2 className="font-display text-lg tracking-wider text-gold-400">Historical entries import</h2>
+      <p className="text-sm text-paper-dim">
+        Backfill a past year's entries from its Google Sheet. Open the
+        <span className="font-mono"> Form Responses</span> tab, select the data rows (with or
+        without the header), copy, then paste here. Make sure the year's bracket is uploaded
+        first via Bracket Setup.
+      </p>
+
+      <form className="card flex flex-col gap-3" onSubmit={onSubmit}>
+        <label className="flex flex-col gap-1 sm:w-32">
+          <span className="font-mono text-[10px] uppercase tracking-widest text-paper-faint">Year</span>
+          <input
+            type="number"
+            min={2000}
+            max={2100}
+            className="input"
+            value={year}
+            onChange={(e) => setYear(Number(e.target.value) || defaultYear)}
+            disabled={submitting}
+          />
+        </label>
+
+        <label className="flex flex-col gap-1">
+          <span className="font-mono text-[10px] uppercase tracking-widest text-paper-faint">
+            Paste rows (tab-separated)
+          </span>
+          <textarea
+            className="input min-h-[280px] font-mono text-xs"
+            placeholder={ENTRIES_IMPORT_PLACEHOLDER}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            disabled={submitting}
+            spellCheck={false}
+          />
+        </label>
+
+        {errors.length > 0 && (
+          <div className="card border-red-400/50 bg-red-400/5">
+            <div className="font-mono text-[10px] uppercase tracking-widest text-red-400">
+              {errors.length} problem{errors.length === 1 ? '' : 's'}
+            </div>
+            <ul className="mt-2 flex flex-col gap-1 text-xs text-red-400">
+              {errors.slice(0, 30).map((err, i) => (
+                <li key={i} className="font-mono">
+                  {err.rowNumber > 0 ? `row ${err.rowNumber}: ` : ''}
+                  {err.message}
+                </li>
+              ))}
+              {errors.length > 30 && (
+                <li className="text-paper-faint">… and {errors.length - 30} more</li>
+              )}
+            </ul>
+          </div>
+        )}
+
+        {serverError && <div className="text-sm text-red-400">{serverError}</div>}
+        {success && <div className="text-sm text-gold-400">{success}</div>}
+
+        <div className="flex items-center justify-between gap-3">
+          <span className="font-mono text-[11px] uppercase tracking-widest text-paper-faint">
+            {text.split(/\r?\n/).filter((l) => l.trim() && !l.trim().startsWith('#')).length} non-blank
+            lines
+          </span>
+          <button type="submit" className="btn-primary" disabled={submitting || !text.trim()}>
+            {submitting ? 'Importing…' : `Import entries for ${year}`}
           </button>
         </div>
       </form>

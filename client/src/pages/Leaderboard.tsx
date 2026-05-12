@@ -12,6 +12,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ApiError, apiFetch } from '../lib/api';
 import { useConfig } from '../lib/config';
 import type { StandingsRow } from '../lib/types';
+import { useYear } from '../lib/year';
 
 interface LeaderboardResponse {
   year: number;
@@ -23,13 +24,18 @@ const ROUND_HEADERS = ['R1', 'R2', 'S16', 'E8', 'F4', 'CHIP'];
 
 export function Leaderboard() {
   const config = useConfig();
+  const { selectedYear } = useYear();
   const [data, setData] = useState<LeaderboardResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
 
   useEffect(() => {
-    apiFetch<LeaderboardResponse>('/api/leaderboard')
+    if (!selectedYear) return;
+    setLoading(true);
+    setData(null);
+    setError(null);
+    apiFetch<LeaderboardResponse>(`/api/leaderboard?year=${selectedYear}`)
       .then((d) => {
         setData(d);
         setLoading(false);
@@ -38,7 +44,7 @@ export function Leaderboard() {
         setError(err.message);
         setLoading(false);
       });
-  }, []);
+  }, [selectedYear]);
 
   const filtered = useMemo(() => {
     if (!data) return [];

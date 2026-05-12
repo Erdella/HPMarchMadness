@@ -19,6 +19,7 @@ import { requireAdmin, requireAuth, type AuthVariables } from '../lib/auth.js';
 import { loadEnv } from '../lib/env.js';
 import { unknownGameIds, validGameIdSet } from '../lib/scoring.js';
 import { teamMapForYear } from '../config/teams.js';
+import { readYear } from '../lib/year.js';
 
 const SetWinnerBody = z.object({
   winnerTeamId: z.string().min(1),
@@ -33,10 +34,11 @@ resultsRoutes.use('*', requireAuth);
 // GET /api/results
 // ---------------------------------------------------------------------------
 resultsRoutes.get('/', async (c) => {
-  const env = loadEnv();
-  const rows = await db.select().from(results).where(eq(results.year, env.TOURNAMENT_YEAR));
+  const y = readYear(c);
+  if (!y.ok) return y.response;
+  const rows = await db.select().from(results).where(eq(results.year, y.year));
   return c.json({
-    year: env.TOURNAMENT_YEAR,
+    year: y.year,
     results: rows.map((r) => ({
       gameId: r.gameId,
       winnerTeamId: r.winnerTeamId,

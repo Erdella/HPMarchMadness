@@ -12,15 +12,16 @@ import { Hono } from 'hono';
 import { db } from '../db/client.js';
 import { entries, results } from '../db/schema.js';
 import { requireAuth, type AuthVariables } from '../lib/auth.js';
-import { loadEnv } from '../lib/env.js';
 import { computeStandings, winnerMapFromResults } from '../lib/scoring.js';
+import { readYear } from '../lib/year.js';
 
 export const leaderboardRoutes = new Hono<{ Variables: AuthVariables }>();
 leaderboardRoutes.use('*', requireAuth);
 
 leaderboardRoutes.get('/', async (c) => {
-  const env = loadEnv();
-  const year = env.TOURNAMENT_YEAR;
+  const y = readYear(c);
+  if (!y.ok) return y.response;
+  const year = y.year;
 
   const [entryRows, resultRows] = await Promise.all([
     db.select().from(entries).where(eq(entries.year, year)),
