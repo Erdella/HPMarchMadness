@@ -12,7 +12,11 @@ import { Hono } from 'hono';
 import { db } from '../db/client.js';
 import { entries, results } from '../db/schema.js';
 import { requireAuth, type AuthVariables } from '../lib/auth.js';
-import { computeStandings, winnerMapFromResults } from '../lib/scoring.js';
+import {
+  computeEliminatedTeams,
+  computeStandings,
+  winnerMapFromResults,
+} from '../lib/scoring.js';
 import { readYear } from '../lib/year.js';
 
 export const leaderboardRoutes = new Hono<{ Variables: AuthVariables }>();
@@ -42,9 +46,21 @@ leaderboardRoutes.get('/', async (c) => {
     winnerMap,
   );
 
+  // Join picks back onto each standings row so the client can render them
+  // (with the elimination overlay) without a second round-trip.
+  const picksById = new Map<string, string[]>();
+  for (const e of entryRows) picksById.set(e.id, e.picks);
+  const standingsWithPicks = standings.map((row) => ({
+    ...row,
+    picks: picksById.get(row.entryId) ?? [],
+  }));
+
+  const eliminatedTeamIds = Array.from(computeEliminatedTeams(year, winnerMap));
+
   return c.json({
     year,
     totalEntries: entryRows.length,
-    standings,
+    eliminatedTeamIds,
+    standings: standingsWithPicks,
   });
 });

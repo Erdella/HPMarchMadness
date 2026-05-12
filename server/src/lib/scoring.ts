@@ -127,6 +127,31 @@ export function winnerMapFromResults(
 }
 
 /**
+ * Compute the set of team IDs that have been eliminated.
+ *
+ * A team is "eliminated" if it lost a game (the game has a recorded result
+ * and the team is not the winner). Teams that haven't yet played their next
+ * round are still alive.
+ */
+export function computeEliminatedTeams(year: number, winnerMap: WinnerMap): Set<string> {
+  const games = buildGames(year);
+  const eliminated = new Set<string>();
+  for (const game of games) {
+    const winnerId = winnerMap[game.id];
+    if (!winnerId) continue;
+    // Figure out who played this game.
+    const participants =
+      game.round === 0
+        ? game.participants
+        : ([winnerMap[game.from[0]], winnerMap[game.from[1]]] as const);
+    for (const teamId of participants) {
+      if (teamId && teamId !== winnerId) eliminated.add(teamId);
+    }
+  }
+  return eliminated;
+}
+
+/**
  * For sanity-checking results entries: returns the IDs of games that don't
  * exist in this year's bracket. Useful to reject typo'd game IDs in admin
  * routes.

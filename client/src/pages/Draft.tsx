@@ -22,6 +22,7 @@ import {
   useState,
   type FormEvent,
 } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { ApiError, apiFetch } from '../lib/api';
 import { useConfig } from '../lib/config';
 import {
@@ -38,6 +39,8 @@ const REGIONS: readonly Region[] = ['South', 'West', 'Midwest', 'East'];
 export function Draft() {
   const config = useConfig();
   const { selectedYear, isViewingHistory } = useYear();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const entryParam = searchParams.get('entry');
 
   const [teams, setTeams] = useState<Team[]>([]);
   const [myEntries, setMyEntries] = useState<Entry[]>([]);
@@ -64,9 +67,9 @@ export function Draft() {
     let cancelled = false;
     setLoading(true);
     setBootError(null);
-    // Clear stale state when switching years.
+    // Clear stale state when switching years (but preserve editingId set from
+    // the ?entry= query — that's handled in the follow-up effect below).
     setMyEntries([]);
-    setEditingId(null);
     setPicks(new Set());
     setDisplayName('');
     setPaymentMethodNote('');
@@ -91,6 +94,36 @@ export function Draft() {
       cancelled = true;
     };
   }, [selectedYear]);
+
+  // -------------------------------------------------------------------------
+  // Deep-link: load a specific entry by ?entry=<id>
+  //
+  // Used by the Admin "Edit picks" button. The server's PATCH /api/entries/:id
+  // already permits admins to edit any entry, so we just fetch and load.
+  // -------------------------------------------------------------------------
+  useEffect(() => {
+    if (!entryParam) return;
+    let cancelled = false;
+    apiFetch<{ entry: Entry }>(`/api/entries/${entryParam}`)
+      .then(({ entry }) => {
+        if (cancelled) return;
+        setEditingId(entry.id);
+        setPicks(new Set(entry.picks));
+        setDisplayName(entry.displayName);
+        setPaymentMethod(entry.paymentMethod);
+        setPaymentMethodNote(entry.paymentMethodNote ?? '');
+        setJustSavedId(null);
+        setSubmitError(null);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      })
+      .catch((err: ApiError) => {
+        if (cancelled) return;
+        setBootError(`Couldn't load entry ${entryParam}: ${err.message}`);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [entryParam]);
 
   // -------------------------------------------------------------------------
   // Derived
@@ -123,6 +156,13 @@ export function Draft() {
     setPaymentMethodNote('');
     setSubmitError(null);
     setJustSavedId(null);
+    // If we arrived via /draft?entry=…, clear the param so subsequent
+    // refreshes don't re-load the same entry.
+    if (entryParam) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('entry');
+      setSearchParams(next, { replace: true });
+    }
   }
 
   function editEntry(entry: Entry) {

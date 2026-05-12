@@ -22,10 +22,11 @@ import {
   type Team,
 } from '../config/teams.js';
 import { db } from '../db/client.js';
-import { appSettings, entries, teams as teamsTable, users } from '../db/schema.js';
+import { appSettings, entries, results, teams as teamsTable, users } from '../db/schema.js';
 import { requireAdmin, requireAuth, type AuthVariables } from '../lib/auth.js';
 import { parseBracketImport } from '../lib/bracketImport.js';
 import { parseEntriesImport } from '../lib/entriesImport.js';
+import { parseResultsImport } from '../lib/resultsImport.js';
 import { loadEnv } from '../lib/env.js';
 
 const PaymentPatchBody = z.object({
@@ -342,6 +343,62 @@ adminRoutes.post('/import/entries', requireAdmin, async (c) => {
     imported: result.entries.length,
     users: emailToUserId.size,
   });
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/admin/import/results   — admin only — bulk-import historical results
+//
+// Body: { year: number, text: string }
+//   The `text` is a round-by-round paste (see lib/resultsImport.ts for format).
+//   Server parses + resolves team names + writes results atomically. Wipes any
+//   existing results for the year first so re-imports are idempotent.
+// ---------------------------------------------------------------------------
+const ImportResultsBody = z.object({
+  year: z.number().int().min(2000).max(2100),
+  text: z.string().min(1).max(100_000),
+});
+
+adminRoutes.post('/import/results', requireAdmin, async (c) => {
+  const user = c.get('user');
+  const body = await c.req.json().catch(() => null);
+  const parsed = ImportResultsBody.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: 'invalid_input', issues: parsed.error.issues }, 400);
+  }
+  const { year, text } = parsed.data;
+
+  let yearTeams: readonly Team[] = [];
+  try {
+    yearTeams = teamsForYear(year);
+  } catch {
+    return c.json(
+      {
+        error: 'no_bracket_for_year',
+        message: `No bracket configured for ${year}. Upload teams via Bracket Setup first.`,
+      },
+      400,
+    );
+  }
+
+  const pairings = pairingsForYear(year);
+  const result = parseResultsImport(text, year, yearTeams, pairings);
+  if (!result.ok) {
+    return c.json({ error: 'validation_failed', issues: result.errors }, 400);
+  }
+
+  await db.transaction(async (tx) => {
+    await tx.delete(results).where(eq(results.year, year));
+    for (const r of result.results) {
+      await tx.insert(results).values({
+        year,
+        gameId: r.gameId,
+        winnerTeamId: r.winnerTeamId,
+        recordedByUserId: user.id,
+      });
+    }
+  });
+
+  return c.json({ ok: true, year, imported: result.results.length });
 });
 
 // ---------------------------------------------------------------------------

@@ -12,6 +12,7 @@
  */
 
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { ApiError, apiFetch } from '../lib/api';
 import { gameOptions, gamesByRound } from '../lib/bracket';
 import { useConfig } from '../lib/config';
@@ -228,15 +229,19 @@ export function Admin() {
       {/* Historical entries import */}
       <EntriesImport defaultYear={config.year} />
 
+      {/* Historical results import */}
+      <ResultsImport defaultYear={config.year} />
+
       {/* Entries dashboard */}
       <section className="flex flex-col gap-4">
         <h2 className="font-display text-lg tracking-wider text-gold-400">Entries</h2>
         <div className="card overflow-hidden p-0">
-          <div className="grid grid-cols-[1fr_120px_120px_80px] items-center gap-3 border-b border-ink-700 bg-ink-700/40 px-4 py-2 font-mono text-[10px] uppercase tracking-widest text-paper-faint">
+          <div className="grid grid-cols-[1fr_110px_100px_100px_90px] items-center gap-3 border-b border-ink-700 bg-ink-700/40 px-4 py-2 font-mono text-[10px] uppercase tracking-widest text-paper-faint">
             <span>Entry</span>
             <span>Method</span>
             <span>Status</span>
             <span></span>
+            <span>Picks</span>
           </div>
           {entries.length === 0 && (
             <div className="px-4 py-6 text-sm text-paper-dim">No entries yet.</div>
@@ -245,7 +250,7 @@ export function Admin() {
             {entries.map((entry) => (
               <li
                 key={entry.id}
-                className="grid grid-cols-[1fr_120px_120px_80px] items-center gap-3 border-b border-ink-700 px-4 py-2 text-sm last:border-0"
+                className="grid grid-cols-[1fr_110px_100px_100px_90px] items-center gap-3 border-b border-ink-700 px-4 py-2 text-sm last:border-0"
               >
                 <div className="flex flex-col">
                   <span className="font-medium">{entry.displayName}</span>
@@ -273,6 +278,12 @@ export function Admin() {
                 >
                   {entry.paymentReceived ? 'Mark unpaid' : 'Mark paid'}
                 </button>
+                <Link
+                  to={`/draft?entry=${entry.id}`}
+                  className="rounded-sm border border-ink-700 px-3 py-1 text-center font-mono text-xs uppercase tracking-widest text-paper-dim transition-colors hover:bg-ink-700 hover:text-gold-400"
+                >
+                  Edit picks
+                </Link>
               </li>
             ))}
           </ul>
@@ -729,6 +740,151 @@ function EntriesImport({ defaultYear }: { defaultYear: number }) {
           </span>
           <button type="submit" className="btn-primary" disabled={submitting || !text.trim()}>
             {submitting ? 'Importing…' : `Import entries for ${year}`}
+          </button>
+        </div>
+      </form>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Historical results import — paste round-by-round winners for any year.
+// ---------------------------------------------------------------------------
+
+const RESULTS_IMPORT_PLACEHOLDER = `# Paste round-by-round winners for one year.
+# Each region: 4 lines (R1=8 teams, R2=4, S16=2, E8=1) comma-separated.
+# Final Four: 1 line, 2 winners in pairing order.
+# Championship: 1 line, 1 winner.
+#
+# Example:
+# SOUTH
+# Purdue, Creighton, Bradley, UCLA, Boise / Maryland, St. John's, Oregon, Kentucky
+# Purdue, UCLA, St. John's, Kentucky
+# Purdue, Kentucky
+# Purdue
+#
+# WEST
+# ... (same format)
+#
+# MIDWEST
+# ...
+#
+# EAST
+# ...
+#
+# FINAL FOUR
+# Purdue, Florida
+#
+# CHAMPIONSHIP
+# Florida
+`;
+
+interface ResultsImportIssue {
+  line: number;
+  message: string;
+}
+
+function ResultsImport({ defaultYear }: { defaultYear: number }) {
+  const [year, setYear] = useState<number>(defaultYear);
+  const [text, setText] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [errors, setErrors] = useState<ResultsImportIssue[]>([]);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [serverError, setServerError] = useState<string | null>(null);
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    setSubmitting(true);
+    setErrors([]);
+    setSuccess(null);
+    setServerError(null);
+    try {
+      const res = await apiFetch<{ year: number; imported: number }>(
+        '/api/admin/import/results',
+        { method: 'POST', body: { year, text } },
+      );
+      setSuccess(`Imported ${res.imported} game results for ${res.year}.`);
+      setText('');
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 400 && err.body && typeof err.body === 'object') {
+        const body = err.body as { error?: string; message?: string; issues?: ResultsImportIssue[] };
+        if (body.error === 'validation_failed' && Array.isArray(body.issues)) {
+          setErrors(body.issues);
+        } else if (body.error === 'no_bracket_for_year') {
+          setServerError(body.message ?? 'No bracket found for that year.');
+        } else {
+          setServerError(err.message);
+        }
+      } else {
+        setServerError(err instanceof Error ? err.message : 'Unknown error');
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <section className="flex flex-col gap-4">
+      <h2 className="font-display text-lg tracking-wider text-gold-400">Historical results import</h2>
+      <p className="text-sm text-paper-dim">
+        Backfill round-by-round winners for any year. The format follows the bracket structure
+        — see the placeholder for an example. Re-importing replaces ALL results for the year.
+        Make sure the year's bracket and Final Four pairings are configured first.
+      </p>
+
+      <form className="card flex flex-col gap-3" onSubmit={onSubmit}>
+        <label className="flex flex-col gap-1 sm:w-32">
+          <span className="font-mono text-[10px] uppercase tracking-widest text-paper-faint">Year</span>
+          <input
+            type="number"
+            min={2000}
+            max={2100}
+            className="input"
+            value={year}
+            onChange={(e) => setYear(Number(e.target.value) || defaultYear)}
+            disabled={submitting}
+          />
+        </label>
+
+        <label className="flex flex-col gap-1">
+          <span className="font-mono text-[10px] uppercase tracking-widest text-paper-faint">
+            Paste winners by section
+          </span>
+          <textarea
+            className="input min-h-[320px] font-mono text-xs"
+            placeholder={RESULTS_IMPORT_PLACEHOLDER}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            disabled={submitting}
+            spellCheck={false}
+          />
+        </label>
+
+        {errors.length > 0 && (
+          <div className="card border-red-400/50 bg-red-400/5">
+            <div className="font-mono text-[10px] uppercase tracking-widest text-red-400">
+              {errors.length} problem{errors.length === 1 ? '' : 's'}
+            </div>
+            <ul className="mt-2 flex flex-col gap-1 text-xs text-red-400">
+              {errors.slice(0, 30).map((err, i) => (
+                <li key={i} className="font-mono">
+                  {err.line > 0 ? `line ${err.line}: ` : ''}
+                  {err.message}
+                </li>
+              ))}
+              {errors.length > 30 && (
+                <li className="text-paper-faint">… and {errors.length - 30} more</li>
+              )}
+            </ul>
+          </div>
+        )}
+
+        {serverError && <div className="text-sm text-red-400">{serverError}</div>}
+        {success && <div className="text-sm text-gold-400">{success}</div>}
+
+        <div className="flex items-center justify-end">
+          <button type="submit" className="btn-primary" disabled={submitting || !text.trim()}>
+            {submitting ? 'Importing…' : `Import results for ${year}`}
           </button>
         </div>
       </form>

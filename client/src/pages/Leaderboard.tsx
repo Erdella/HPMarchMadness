@@ -1,23 +1,29 @@
 /**
  * Leaderboard.
  *
- * Shows ranked standings with per-round score breakdown columns and an
- * inline name filter. Top entry highlighted in gold.
+ * Per-row layout (two visual rows per entry):
+ *   1. Rank · name · per-round breakdown · total
+ *   2. The entry's 15 picks rendered as compact pills, with eliminated teams
+ *      grayed-out and struck through.
  *
- * Tiebreaker rule per Brett's email: total points first, then R1 points,
- * then R2, ... — the server already sorts that way, so we just render.
+ * Live data — refetches on year change. Top-3 ranks are accented.
  */
 
 import { useEffect, useMemo, useState } from 'react';
 import { ApiError, apiFetch } from '../lib/api';
 import { useConfig } from '../lib/config';
-import type { StandingsRow } from '../lib/types';
+import type { StandingsRow, Team } from '../lib/types';
 import { useYear } from '../lib/year';
+
+interface StandingsRowWithPicks extends StandingsRow {
+  picks: string[];
+}
 
 interface LeaderboardResponse {
   year: number;
   totalEntries: number;
-  standings: StandingsRow[];
+  eliminatedTeamIds: string[];
+  standings: StandingsRowWithPicks[];
 }
 
 const ROUND_HEADERS = ['R1', 'R2', 'S16', 'E8', 'F4', 'CHIP'];
@@ -26,25 +32,48 @@ export function Leaderboard() {
   const config = useConfig();
   const { selectedYear } = useYear();
   const [data, setData] = useState<LeaderboardResponse | null>(null);
+  const [teams, setTeams] = useState<Team[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
+  const [showPicks, setShowPicks] = useState(true);
 
   useEffect(() => {
     if (!selectedYear) return;
+    let cancelled = false;
     setLoading(true);
     setData(null);
     setError(null);
-    apiFetch<LeaderboardResponse>(`/api/leaderboard?year=${selectedYear}`)
-      .then((d) => {
-        setData(d);
+    Promise.all([
+      apiFetch<LeaderboardResponse>(`/api/leaderboard?year=${selectedYear}`),
+      apiFetch<{ teams: Team[] }>(`/api/config/teams?year=${selectedYear}`),
+    ])
+      .then(([lb, t]) => {
+        if (cancelled) return;
+        setData(lb);
+        setTeams(t.teams);
         setLoading(false);
       })
       .catch((err: ApiError) => {
+        if (cancelled) return;
         setError(err.message);
         setLoading(false);
       });
+    return () => {
+      cancelled = true;
+    };
   }, [selectedYear]);
+
+  const teamMap = useMemo(() => {
+    const m = new Map<string, Team>();
+    for (const t of teams) m.set(t.id, t);
+    return m;
+  }, [teams]);
+
+  const eliminatedSet = useMemo(
+    () => new Set(data?.eliminatedTeamIds ?? []),
+    [data?.eliminatedTeamIds],
+  );
 
   const filtered = useMemo(() => {
     if (!data) return [];
@@ -83,18 +112,31 @@ export function Leaderboard() {
 
       {data && data.standings.length === 0 && (
         <div className="card text-sm text-paper-dim">
-          No entries yet. Standings appear once the first entry is in.
+          No entries for {data.year} yet.
         </div>
       )}
 
       {data && data.standings.length > 0 && (
         <>
-          <input
-            className="input max-w-xs"
-            placeholder="Filter by name…"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-          />
+          <div className="flex flex-wrap items-center gap-3">
+            <input
+              className="input max-w-xs"
+              placeholder="Filter by name…"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+            />
+            <label className="flex cursor-pointer items-center gap-2 text-xs text-paper-dim">
+              <input
+                type="checkbox"
+                checked={showPicks}
+                onChange={(e) => setShowPicks(e.target.checked)}
+              />
+              Show picks
+            </label>
+            <span className="ml-auto font-mono text-[10px] uppercase tracking-widest text-paper-faint">
+              {eliminatedSet.size} eliminated · {teams.length - eliminatedSet.size} alive
+            </span>
+          </div>
 
           <div className="card overflow-x-auto p-0">
             <table className="w-full text-sm">
@@ -123,33 +165,15 @@ export function Leaderboard() {
                         ? 'text-maroon-300'
                         : 'text-paper-dim';
                   return (
-                    <tr key={row.entryId} className="border-b border-ink-700 last:border-0">
-                      <td className={`px-4 py-2 font-mono ${rankClass}`}>
-                        {String(row.rank).padStart(2, '0')}
-                      </td>
-                      <td className="px-4 py-2">
-                        <span className={top ? 'font-medium text-gold-400' : ''}>
-                          {row.displayName}
-                        </span>
-                      </td>
-                      {row.byRound.map((pts, i) => (
-                        <td
-                          key={i}
-                          className={`px-2 py-2 text-right font-mono text-xs ${
-                            pts === 0 ? 'text-paper-faint' : 'text-paper'
-                          }`}
-                        >
-                          {pts}
-                        </td>
-                      ))}
-                      <td
-                        className={`px-4 py-2 text-right font-mono ${
-                          top ? 'text-gold-400' : 'text-paper'
-                        }`}
-                      >
-                        {row.total}
-                      </td>
-                    </tr>
+                    <Row
+                      key={row.entryId}
+                      row={row}
+                      teamMap={teamMap}
+                      eliminatedSet={eliminatedSet}
+                      rankClass={rankClass}
+                      top={top}
+                      showPicks={showPicks}
+                    />
                   );
                 })}
               </tbody>
@@ -164,5 +188,93 @@ export function Leaderboard() {
         </>
       )}
     </div>
+  );
+}
+
+function Row({
+  row,
+  teamMap,
+  eliminatedSet,
+  rankClass,
+  top,
+  showPicks,
+}: {
+  row: StandingsRowWithPicks;
+  teamMap: ReadonlyMap<string, Team>;
+  eliminatedSet: ReadonlySet<string>;
+  rankClass: string;
+  top: boolean;
+  showPicks: boolean;
+}) {
+  // Sort picks by seed for stable display.
+  const sortedPicks = useMemo(() => {
+    return [...row.picks].sort((a, b) => {
+      const ta = teamMap.get(a);
+      const tb = teamMap.get(b);
+      const sa = ta?.seed ?? 99;
+      const sb = tb?.seed ?? 99;
+      if (sa !== sb) return sa - sb;
+      return (ta?.name ?? '').localeCompare(tb?.name ?? '');
+    });
+  }, [row.picks, teamMap]);
+
+  return (
+    <>
+      <tr className="border-b border-ink-700/50">
+        <td className={`px-4 py-2 font-mono ${rankClass}`}>{String(row.rank).padStart(2, '0')}</td>
+        <td className="px-4 py-2">
+          <span className={top ? 'font-medium text-gold-400' : ''}>{row.displayName}</span>
+        </td>
+        {row.byRound.map((pts, i) => (
+          <td
+            key={i}
+            className={`px-2 py-2 text-right font-mono text-xs ${
+              pts === 0 ? 'text-paper-faint' : 'text-paper'
+            }`}
+          >
+            {pts}
+          </td>
+        ))}
+        <td
+          className={`px-4 py-2 text-right font-mono ${top ? 'text-gold-400' : 'text-paper'}`}
+        >
+          {row.total}
+        </td>
+      </tr>
+      {showPicks && (
+        <tr className="border-b border-ink-700">
+          <td />
+          <td colSpan={8} className="px-4 pb-3 pt-0">
+            <ul className="flex flex-wrap gap-1.5">
+              {sortedPicks.map((id) => {
+                const team = teamMap.get(id);
+                const alive = team && !eliminatedSet.has(id);
+                return (
+                  <li
+                    key={id}
+                    className={
+                      'inline-flex items-center gap-1 rounded-sm border px-1.5 py-0.5 font-mono text-[10px] ' +
+                      (alive
+                        ? 'border-ink-700 bg-ink-800 text-paper'
+                        : 'border-ink-700/50 bg-ink-800/40 text-paper-faint line-through')
+                    }
+                    title={team ? `${team.name} (${team.region}, seed ${team.seed})` : id}
+                  >
+                    <span
+                      className={
+                        alive ? 'text-gold-400' : 'text-paper-faint'
+                      }
+                    >
+                      {team?.seed ?? '?'}
+                    </span>
+                    <span>{team?.name ?? id}</span>
+                  </li>
+                );
+              })}
+            </ul>
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
