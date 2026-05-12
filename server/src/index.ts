@@ -10,9 +10,16 @@ import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
-import { replaceTeamsOverride, type Team } from './config/teams.js';
+import {
+  isValidPairings,
+  replacePairingsOverride,
+  replaceTeamsOverride,
+  type FinalFourPairings,
+  type Team,
+} from './config/teams.js';
 import { db, sql as dbSql } from './db/client.js';
-import { teams as teamsTable } from './db/schema.js';
+import { appSettings, teams as teamsTable } from './db/schema.js';
+import { eq } from 'drizzle-orm';
 import { loadEnv } from './lib/env.js';
 import { adminRoutes } from './routes/admin.js';
 import { authRoutes } from './routes/auth.js';
@@ -91,6 +98,27 @@ async function bootTeamsCache(): Promise<void> {
       console.log(`Bracket cache: loaded ${rows.length} teams across ${years.length} year(s) — ${years.join(', ')}`);
     } else {
       console.log('Bracket cache: empty (using code-side fallback in config/teams.ts)');
+    }
+
+    // Also load per-year Final Four pairings from app_settings.
+    const pairingRows = await db
+      .select()
+      .from(appSettings)
+      .where(eq(appSettings.key, 'final_four_pairings'));
+    const pairingsByYear: Record<number, FinalFourPairings> = {};
+    for (const row of pairingRows) {
+      if (isValidPairings(row.value)) {
+        pairingsByYear[row.year] = row.value;
+      } else {
+        console.warn(`Ignoring invalid pairings for ${row.year}:`, row.value);
+      }
+    }
+    replacePairingsOverride(pairingsByYear);
+    const pairingYears = Object.keys(pairingsByYear);
+    if (pairingYears.length > 0) {
+      console.log(
+        `Final Four pairings: loaded for ${pairingYears.length} year(s) — ${pairingYears.join(', ')}`,
+      );
     }
   } catch (err) {
     console.error('Failed to prime bracket cache; falling back to code defaults.', err);

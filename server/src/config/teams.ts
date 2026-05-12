@@ -177,6 +177,57 @@ const TEAMS_BY_YEAR: Record<number, readonly Team[]> = {
 };
 
 // ---------------------------------------------------------------------------
+// Final Four pairings — change yearly, decided by the NCAA selection committee.
+//
+// The bracket structure has two semifinal games (final-four-1 and final-four-2)
+// that take winners of two regional finals each. Which regions feed which
+// semifinal is the "pairing".
+//
+// Default mirrors the original index.html (South vs Midwest, West vs East).
+// Admins override per year via the admin UI.
+// ---------------------------------------------------------------------------
+
+export type FinalFourPairings = readonly [
+  readonly [Region, Region],
+  readonly [Region, Region],
+];
+
+export const DEFAULT_FINAL_FOUR_PAIRINGS: FinalFourPairings = [
+  ['South', 'Midwest'],
+  ['West', 'East'],
+];
+
+/** Returns true if a pairings tuple uses each region exactly once. */
+export function isValidPairings(p: unknown): p is FinalFourPairings {
+  if (!Array.isArray(p) || p.length !== 2) return false;
+  const seen = new Set<string>();
+  for (const pair of p) {
+    if (!Array.isArray(pair) || pair.length !== 2) return false;
+    for (const r of pair) {
+      if (typeof r !== 'string') return false;
+      if (!REGION_ORDER.includes(r as Region)) return false;
+      if (seen.has(r)) return false;
+      seen.add(r);
+    }
+  }
+  return seen.size === 4;
+}
+
+let PAIRINGS_OVERRIDE: Record<number, FinalFourPairings> = {};
+
+export function setPairingsOverride(year: number, p: FinalFourPairings): void {
+  PAIRINGS_OVERRIDE = { ...PAIRINGS_OVERRIDE, [year]: p };
+}
+
+export function replacePairingsOverride(byYear: Record<number, FinalFourPairings>): void {
+  PAIRINGS_OVERRIDE = { ...byYear };
+}
+
+export function pairingsForYear(year: number): FinalFourPairings {
+  return PAIRINGS_OVERRIDE[year] ?? DEFAULT_FINAL_FOUR_PAIRINGS;
+}
+
+// ---------------------------------------------------------------------------
 // DB-backed override cache.
 //
 // Loaded at server startup (see initTeamsCache below) and refreshed whenever
@@ -299,21 +350,23 @@ export function buildGames(year: number): Game[] {
     });
   }
 
-  // Round 4 (Final Four): 2 games. South vs Midwest, West vs East — preserves
-  // the original index.html's pairings.
+  // Round 4 (Final Four): 2 games. Pairings are configured per year by admins —
+  // the NCAA decides which two regional brackets feed each semifinal.
+  const pairings = pairingsForYear(year);
+  const fromForRegion = (r: Region) => `${r.toLowerCase()}-r4-g1`;
   games.push({
     id: 'final-four-1',
     round: 4,
     label: 'Final Four 1',
-    bracketLabel: 'South vs Midwest',
-    from: ['south-r4-g1', 'midwest-r4-g1'],
+    bracketLabel: `${pairings[0][0]} vs ${pairings[0][1]}`,
+    from: [fromForRegion(pairings[0][0]), fromForRegion(pairings[0][1])],
   });
   games.push({
     id: 'final-four-2',
     round: 4,
     label: 'Final Four 2',
-    bracketLabel: 'West vs East',
-    from: ['west-r4-g1', 'east-r4-g1'],
+    bracketLabel: `${pairings[1][0]} vs ${pairings[1][1]}`,
+    from: [fromForRegion(pairings[1][0]), fromForRegion(pairings[1][1])],
   });
 
   // Round 5 (Championship): 1 game.

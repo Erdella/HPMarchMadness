@@ -11,7 +11,16 @@
 import { and, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { setTeamsOverride, teamsForYear, type Team } from '../config/teams.js';
+import {
+  DEFAULT_FINAL_FOUR_PAIRINGS,
+  isValidPairings,
+  pairingsForYear,
+  setPairingsOverride,
+  setTeamsOverride,
+  teamsForYear,
+  type FinalFourPairings,
+  type Team,
+} from '../config/teams.js';
 import { db } from '../db/client.js';
 import { appSettings, entries, teams as teamsTable, users } from '../db/schema.js';
 import { requireAdmin, requireAuth, type AuthVariables } from '../lib/auth.js';
@@ -201,6 +210,56 @@ adminRoutes.put('/bracket', requireAdmin, async (c) => {
   setTeamsOverride(year, newTeams);
 
   return c.json({ ok: true, year, count: newTeams.length, teams: newTeams });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/admin/pairings   — admin only — current Final Four pairings
+// ---------------------------------------------------------------------------
+adminRoutes.get('/pairings', requireAdmin, async (c) => {
+  const env = loadEnv();
+  const yearParam = c.req.query('year');
+  const year = yearParam ? Number.parseInt(yearParam, 10) : env.TOURNAMENT_YEAR;
+  if (!Number.isFinite(year)) return c.json({ error: 'invalid_year' }, 400);
+
+  const pairings = pairingsForYear(year);
+  return c.json({
+    year,
+    pairings,
+    isDefault: pairings === DEFAULT_FINAL_FOUR_PAIRINGS,
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PUT /api/admin/pairings   — admin only — set Final Four pairings for a year
+// ---------------------------------------------------------------------------
+const PutPairingsBody = z.object({
+  year: z.number().int().min(2000).max(2100),
+  pairings: z.array(z.array(z.string()).length(2)).length(2),
+});
+
+adminRoutes.put('/pairings', requireAdmin, async (c) => {
+  const user = c.get('user');
+  const body = await c.req.json().catch(() => null);
+  const parsed = PutPairingsBody.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: 'invalid_input', issues: parsed.error.issues }, 400);
+  }
+
+  const candidate = parsed.data.pairings;
+  if (!isValidPairings(candidate)) {
+    return c.json(
+      {
+        error: 'invalid_pairings',
+        message: 'Pairings must use each region (South, West, Midwest, East) exactly once.',
+      },
+      400,
+    );
+  }
+  const pairings = candidate as FinalFourPairings;
+
+  await upsertSetting(parsed.data.year, 'final_four_pairings', pairings, user.id);
+  setPairingsOverride(parsed.data.year, pairings);
+  return c.json({ ok: true, year: parsed.data.year, pairings });
 });
 
 // ---------------------------------------------------------------------------

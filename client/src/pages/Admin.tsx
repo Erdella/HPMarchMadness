@@ -222,6 +222,9 @@ export function Admin() {
       {/* Bracket setup */}
       <BracketSetup defaultYear={config.year} onSaved={(newTeams) => setTeams(newTeams)} />
 
+      {/* Final Four pairings */}
+      <FinalFourPairings defaultYear={config.year} />
+
       {/* Historical entries import */}
       <EntriesImport defaultYear={config.year} />
 
@@ -414,6 +417,191 @@ function BracketSetup({
         </div>
       </form>
     </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Final Four pairings — which regions play each other in each semifinal.
+// ---------------------------------------------------------------------------
+
+type Region = 'South' | 'West' | 'Midwest' | 'East';
+const REGIONS: readonly Region[] = ['South', 'West', 'Midwest', 'East'];
+
+function FinalFourPairings({ defaultYear }: { defaultYear: number }) {
+  const [year, setYear] = useState<number>(defaultYear);
+  const [pair1, setPair1] = useState<[Region, Region]>(['South', 'Midwest']);
+  const [pair2, setPair2] = useState<[Region, Region]>(['West', 'East']);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  // Load current pairings whenever year changes.
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setSuccess(null);
+    apiFetch<{ pairings: [[Region, Region], [Region, Region]] }>(
+      `/api/admin/pairings?year=${year}`,
+    )
+      .then((data) => {
+        if (cancelled) return;
+        setPair1(data.pairings[0]);
+        setPair2(data.pairings[1]);
+        setLoading(false);
+      })
+      .catch((err: ApiError) => {
+        if (cancelled) return;
+        setError(err.message);
+        setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [year]);
+
+  // Validate: each region appears exactly once.
+  const allRegions = [pair1[0], pair1[1], pair2[0], pair2[1]];
+  const usedSet = new Set(allRegions);
+  const valid = usedSet.size === 4;
+
+  async function onSave() {
+    if (!valid) {
+      setError('Each region must appear exactly once across the two pairs.');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      await apiFetch('/api/admin/pairings', {
+        method: 'PUT',
+        body: { year, pairings: [pair1, pair2] },
+      });
+      setSuccess(`Saved Final Four pairings for ${year}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Save failed');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="flex flex-col gap-4">
+      <h2 className="font-display text-lg tracking-wider text-gold-400">Final Four pairings</h2>
+      <p className="text-sm text-paper-dim">
+        Which regions meet in each semifinal. The NCAA decides this each year — the default of
+        South vs Midwest / West vs East is rarely correct. Set this for every year so the
+        admin Results dropdowns show the right teams.
+      </p>
+
+      <div className="card flex flex-col gap-4">
+        <label className="flex flex-col gap-1 sm:w-32">
+          <span className="font-mono text-[10px] uppercase tracking-widest text-paper-faint">Year</span>
+          <input
+            type="number"
+            min={2000}
+            max={2100}
+            className="input"
+            value={year}
+            onChange={(e) => setYear(Number(e.target.value) || defaultYear)}
+            disabled={loading || saving}
+          />
+        </label>
+
+        <div className="flex flex-col gap-3">
+          <PairingRow
+            label="Semifinal 1"
+            left={pair1[0]}
+            right={pair1[1]}
+            onLeft={(r) => setPair1([r, pair1[1]])}
+            onRight={(r) => setPair1([pair1[0], r])}
+            disabled={loading || saving}
+          />
+          <PairingRow
+            label="Semifinal 2"
+            left={pair2[0]}
+            right={pair2[1]}
+            onLeft={(r) => setPair2([r, pair2[1]])}
+            onRight={(r) => setPair2([pair2[0], r])}
+            disabled={loading || saving}
+          />
+        </div>
+
+        {!valid && (
+          <div className="text-sm text-red-400">
+            Each region must appear exactly once. Currently using:{' '}
+            <span className="font-mono">{allRegions.join(', ')}</span>.
+          </div>
+        )}
+        {error && <div className="text-sm text-red-400">{error}</div>}
+        {success && <div className="text-sm text-gold-400">{success}</div>}
+
+        <div className="flex items-center justify-end">
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={onSave}
+            disabled={loading || saving || !valid}
+          >
+            {saving ? 'Saving…' : `Save pairings for ${year}`}
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function PairingRow({
+  label,
+  left,
+  right,
+  onLeft,
+  onRight,
+  disabled,
+}: {
+  label: string;
+  left: Region;
+  right: Region;
+  onLeft(r: Region): void;
+  onRight(r: Region): void;
+  disabled: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <span className="w-24 font-mono text-[11px] uppercase tracking-widest text-paper-faint">
+        {label}
+      </span>
+      <RegionSelect value={left} onChange={onLeft} disabled={disabled} />
+      <span className="font-mono text-xs text-paper-faint">vs</span>
+      <RegionSelect value={right} onChange={onRight} disabled={disabled} />
+    </div>
+  );
+}
+
+function RegionSelect({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: Region;
+  onChange(r: Region): void;
+  disabled: boolean;
+}) {
+  return (
+    <select
+      className="input w-40"
+      value={value}
+      onChange={(e) => onChange(e.target.value as Region)}
+      disabled={disabled}
+    >
+      {REGIONS.map((r) => (
+        <option key={r} value={r}>
+          {r}
+        </option>
+      ))}
+    </select>
   );
 }
 
