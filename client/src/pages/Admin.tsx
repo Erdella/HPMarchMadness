@@ -386,7 +386,7 @@ function BracketSetup({
           <span className="font-mono text-[10px] uppercase tracking-widest text-paper-faint">Year</span>
           <input
             type="number"
-            min={2024}
+            min={2000}
             max={2100}
             className="input"
             value={year}

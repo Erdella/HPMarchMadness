@@ -172,7 +172,7 @@ adminRoutes.get('/bracket', requireAdmin, async (c) => {
 //   the accepted format). Server parses + validates + persists atomically.
 // ---------------------------------------------------------------------------
 const PutBracketBody = z.object({
-  year: z.number().int().min(2024).max(2100),
+  year: z.number().int().min(2000).max(2100),
   text: z.string().min(1).max(20_000),
 });
 

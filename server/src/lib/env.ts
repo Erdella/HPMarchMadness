@@ -36,7 +36,7 @@ const EnvSchema = z.object({
     .string()
     .default('2026')
     .transform((s) => Number.parseInt(s, 10))
-    .pipe(z.number().int().min(2024).max(2100)),
+    .pipe(z.number().int().min(2000).max(2100)),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
 });
 
