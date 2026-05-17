@@ -223,6 +223,13 @@ export function replacePairingsOverride(byYear: Record<number, FinalFourPairings
   PAIRINGS_OVERRIDE = { ...byYear };
 }
 
+/** Drop the in-memory pairings for a single year (used by reset tooling). */
+export function clearPairingsOverride(year: number): void {
+  const next = { ...PAIRINGS_OVERRIDE };
+  delete next[year];
+  PAIRINGS_OVERRIDE = next;
+}
+
 export function pairingsForYear(year: number): FinalFourPairings {
   return PAIRINGS_OVERRIDE[year] ?? DEFAULT_FINAL_FOUR_PAIRINGS;
 }
@@ -251,6 +258,13 @@ export function setTeamsOverride(year: number, teams: readonly Team[]): void {
  */
 export function replaceTeamsOverride(byYear: Record<number, readonly Team[]>): void {
   DB_OVERRIDE = { ...byYear };
+}
+
+/** Drop the in-memory override for a single year (used by reset tooling). */
+export function clearTeamsOverride(year: number): void {
+  const next = { ...DB_OVERRIDE };
+  delete next[year];
+  DB_OVERRIDE = next;
 }
 
 /**

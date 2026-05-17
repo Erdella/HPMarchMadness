@@ -232,6 +232,20 @@ export function Admin() {
       {/* Historical results import */}
       <ResultsImport defaultYear={config.year} />
 
+      {/* Reset year — clean-slate per-year deletion */}
+      <ResetYear defaultYear={config.year} onReset={(year, scope) => {
+        // After bracket reset for the current view, our teams state is stale
+        if ((scope === 'bracket' || scope === 'all') && year === config.year) {
+          setTeams([]);
+        }
+        if ((scope === 'entries' || scope === 'all') && year === config.year) {
+          setEntries([]);
+        }
+        if ((scope === 'results' || scope === 'all') && year === config.year) {
+          setResults([]);
+        }
+      }} />
+
       {/* Entries dashboard */}
       <section className="flex flex-col gap-4">
         <h2 className="font-display text-lg tracking-wider text-gold-400">Entries</h2>
@@ -888,6 +902,120 @@ function ResultsImport({ defaultYear }: { defaultYear: number }) {
           </button>
         </div>
       </form>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Reset year — wipe data for a given year. Mostly used during testing /
+// recovery from a bad import.
+// ---------------------------------------------------------------------------
+
+type ResetScope = 'results' | 'entries' | 'bracket' | 'all';
+
+const SCOPE_DESCRIPTIONS: Record<ResetScope, string> = {
+  results: 'Wipes only the game-by-game winners.',
+  entries: 'Wipes only the submitted brackets (entries + picks).',
+  bracket: 'Wipes the 64-team field + Final Four pairings + admin settings.',
+  all: 'Wipes everything: results, entries, bracket, pairings, settings.',
+};
+
+function ResetYear({
+  defaultYear,
+  onReset,
+}: {
+  defaultYear: number;
+  onReset(year: number, scope: ResetScope): void;
+}) {
+  const [year, setYear] = useState<number>(defaultYear);
+  const [busy, setBusy] = useState<ResetScope | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function doReset(scope: ResetScope) {
+    const warning =
+      scope === 'all'
+        ? `Wipe EVERYTHING for ${year}? This deletes results, entries, bracket, and pairings.`
+        : `Clear ${scope} for ${year}? ${SCOPE_DESCRIPTIONS[scope]}`;
+    if (!confirm(warning)) return;
+
+    setBusy(scope);
+    setSuccess(null);
+    setError(null);
+    try {
+      const res = await apiFetch<{
+        scope: ResetScope;
+        deleted: { results: number; entries: number; teams: number; settings: number };
+      }>(`/api/admin/year/${year}/${scope}?confirm=${year}`, { method: 'DELETE' });
+      const d = res.deleted;
+      const parts: string[] = [];
+      if (d.results) parts.push(`${d.results} result${d.results === 1 ? '' : 's'}`);
+      if (d.entries) parts.push(`${d.entries} entr${d.entries === 1 ? 'y' : 'ies'}`);
+      if (d.teams) parts.push(`${d.teams} team${d.teams === 1 ? '' : 's'}`);
+      if (d.settings) parts.push(`${d.settings} setting${d.settings === 1 ? '' : 's'}`);
+      setSuccess(`Cleared ${parts.join(' · ') || 'nothing (was already empty)'} for ${year}.`);
+      onReset(year, scope);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Reset failed');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const scopes: ResetScope[] = ['results', 'entries', 'bracket', 'all'];
+
+  return (
+    <section className="flex flex-col gap-4">
+      <h2 className="font-display text-lg tracking-wider text-red-400">Reset year</h2>
+      <p className="text-sm text-paper-dim">
+        Wipe data for a year and start fresh. Useful when a paste went wrong. Each button only
+        clears its specific scope — pick the narrowest one that gets you unstuck. There is no
+        undo.
+      </p>
+
+      <div className="card flex flex-col gap-4 border-red-400/30">
+        <label className="flex flex-col gap-1 sm:w-32">
+          <span className="font-mono text-[10px] uppercase tracking-widest text-paper-faint">Year</span>
+          <input
+            type="number"
+            min={2000}
+            max={2100}
+            className="input"
+            value={year}
+            onChange={(e) => setYear(Number(e.target.value) || defaultYear)}
+            disabled={busy !== null}
+          />
+        </label>
+
+        <div className="grid gap-2 sm:grid-cols-2">
+          {scopes.map((scope) => (
+            <button
+              key={scope}
+              type="button"
+              className={
+                'flex flex-col items-start gap-1 rounded-sm border px-3 py-2 text-left transition-colors ' +
+                (scope === 'all'
+                  ? 'border-red-400 bg-red-400/10 text-red-400 hover:bg-red-400/20'
+                  : 'border-ink-700 bg-ink-800 text-paper hover:border-red-400/50 hover:bg-ink-700')
+              }
+              onClick={() => void doReset(scope)}
+              disabled={busy !== null}
+            >
+              <span className="font-mono text-[11px] uppercase tracking-widest">
+                {busy === scope
+                  ? 'Working…'
+                  : scope === 'all'
+                    ? `Wipe everything for ${year}`
+                    : `Clear ${scope} for ${year}`}
+              </span>
+              <span className="text-xs text-paper-faint">{SCOPE_DESCRIPTIONS[scope]}</span>
+            </button>
+          ))}
+        </div>
+
+        {error && <div className="text-sm text-red-400">{error}</div>}
+        {success && <div className="text-sm text-gold-400">{success}</div>}
+      </div>
     </section>
   );
 }

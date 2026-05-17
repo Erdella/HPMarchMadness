@@ -13,6 +13,8 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import {
   DEFAULT_FINAL_FOUR_PAIRINGS,
+  clearPairingsOverride,
+  clearTeamsOverride,
   isValidPairings,
   pairingsForYear,
   setPairingsOverride,
@@ -399,6 +401,68 @@ adminRoutes.post('/import/results', requireAdmin, async (c) => {
   });
 
   return c.json({ ok: true, year, imported: result.results.length });
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /api/admin/year/:year/:scope   — admin only — reset data for a year
+//
+// :scope is one of:
+//   results   — wipe only game results
+//   entries   — wipe only entries (also affects any leaderboard scoring)
+//   bracket   — wipe teams + Final Four pairings + app_settings for the year
+//   all       — wipe everything for the year (results + entries + bracket)
+//
+// Requires `?confirm=YEAR` query param matching the year, as a guardrail.
+// ---------------------------------------------------------------------------
+const ResetScopes = new Set(['results', 'entries', 'bracket', 'all'] as const);
+
+adminRoutes.delete('/year/:year/:scope', requireAdmin, async (c) => {
+  const yearStr = c.req.param('year');
+  const scope = c.req.param('scope');
+  const year = Number.parseInt(yearStr, 10);
+  if (!Number.isFinite(year) || year < 2000 || year > 2100) {
+    return c.json({ error: 'invalid_year', got: yearStr }, 400);
+  }
+  if (!ResetScopes.has(scope as 'results' | 'entries' | 'bracket' | 'all')) {
+    return c.json({ error: 'invalid_scope', got: scope }, 400);
+  }
+  const confirm = c.req.query('confirm');
+  if (confirm !== String(year)) {
+    return c.json(
+      { error: 'missing_confirmation', message: `Pass ?confirm=${year} to proceed.` },
+      400,
+    );
+  }
+
+  const deleted = { results: 0, entries: 0, teams: 0, settings: 0 };
+
+  await db.transaction(async (tx) => {
+    if (scope === 'results' || scope === 'all') {
+      const out = await tx.delete(results).where(eq(results.year, year)).returning({ id: results.id });
+      deleted.results = out.length;
+    }
+    if (scope === 'entries' || scope === 'all') {
+      const out = await tx.delete(entries).where(eq(entries.year, year)).returning({ id: entries.id });
+      deleted.entries = out.length;
+    }
+    if (scope === 'bracket' || scope === 'all') {
+      const tOut = await tx.delete(teamsTable).where(eq(teamsTable.year, year)).returning({ id: teamsTable.id });
+      deleted.teams = tOut.length;
+      const sOut = await tx
+        .delete(appSettings)
+        .where(eq(appSettings.year, year))
+        .returning({ key: appSettings.key });
+      deleted.settings = sOut.length;
+    }
+  });
+
+  // Refresh in-memory caches that mirror DB state.
+  if (scope === 'bracket' || scope === 'all') {
+    clearTeamsOverride(year);
+    clearPairingsOverride(year);
+  }
+
+  return c.json({ ok: true, year, scope, deleted });
 });
 
 // ---------------------------------------------------------------------------
