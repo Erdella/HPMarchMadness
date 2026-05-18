@@ -36,6 +36,7 @@ export function Layout() {
             <nav className="ml-auto flex items-center gap-4 text-sm">
               <NavTab to="/draft" label="Draft" />
               <NavTab to="/leaderboard" label="Leaderboard" />
+              <NavTab to="/stats" label="Nerd stats" />
               {isAdmin && <NavTab to="/admin" label="Admin" />}
               {availableYears.length > 1 && (
                 <YearSelector

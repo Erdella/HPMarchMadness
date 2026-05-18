@@ -27,6 +27,7 @@ import { configRoutes } from './routes/config.js';
 import { entriesRoutes } from './routes/entries.js';
 import { leaderboardRoutes } from './routes/leaderboard.js';
 import { resultsRoutes } from './routes/results.js';
+import { statsRoutes } from './routes/stats.js';
 
 const env = loadEnv();
 
@@ -74,6 +75,7 @@ app.route('/api/entries', entriesRoutes);
 app.route('/api/results', resultsRoutes);
 app.route('/api/admin', adminRoutes);
 app.route('/api/leaderboard', leaderboardRoutes);
+app.route('/api/stats', statsRoutes);
 
 // -----------------------------------------------------------------------------
 // Load any admin-uploaded brackets from DB into the in-memory cache, then boot.

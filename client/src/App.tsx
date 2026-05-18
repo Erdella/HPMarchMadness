@@ -21,6 +21,7 @@ import { Draft } from './pages/Draft';
 import { Home } from './pages/Home';
 import { Leaderboard } from './pages/Leaderboard';
 import { Login } from './pages/Login';
+import { Stats } from './pages/Stats';
 
 export function App() {
   return (
@@ -55,6 +56,14 @@ export function App() {
                   element={
                     <RequireAuth>
                       <Leaderboard />
+                    </RequireAuth>
+                  }
+                />
+                <Route
+                  path="/stats"
+                  element={
+                    <RequireAuth>
+                      <Stats />
                     </RequireAuth>
                   }
                 />
