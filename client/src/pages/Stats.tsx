@@ -37,7 +37,9 @@ interface StatsResponse {
   completeYears: number[];
   totalEntries: number;
   topScores: TopScoreRow[];
-  bottomScores: TopScoreRow[];
+  // Optional so the page still renders against an older API that doesn't
+  // include bottomScores yet (e.g. server rebuild lagging client deploy).
+  bottomScores?: TopScoreRow[];
   players: PlayerStatsRow[];
 }
 
@@ -199,7 +201,7 @@ export function Stats() {
         </section>
       )}
 
-      {data && data.bottomScores.length > 0 && (
+      {data && data.bottomScores && data.bottomScores.length > 0 && (
         <section className="flex flex-col gap-3">
           <h2 className="font-display text-lg tracking-wider text-maroon-400">
             Wall of Shame
