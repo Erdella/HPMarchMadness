@@ -26,7 +26,11 @@ interface LeaderboardResponse {
   standings: StandingsRowWithPicks[];
 }
 
-const ROUND_HEADERS = ['R1', 'R2', 'S16', 'E8', 'F4', 'CHIP'];
+const ROUND_HEADERS = ['R64', 'R32', 'S16', 'E8', 'F4', 'CHIP'];
+
+function roundLabel(round: number): string {
+  return ROUND_HEADERS[round - 1] ?? `R${round}`;
+}
 
 export function Leaderboard() {
   const config = useConfig();
@@ -97,8 +101,11 @@ export function Leaderboard() {
       </header>
 
       <p className="text-sm text-paper-dim">
-        Scoring: {Object.entries(config.scoring).map(([r, p]) => `R${r}=${p}`).join(' · ')}.
-        Ties broken by 1st-round points, then 2nd, then onward.
+        Scoring:{' '}
+        {Object.entries(config.scoring)
+          .map(([r, p]) => `${roundLabel(Number(r))}=${p}`)
+          .join(' · ')}
+        . Ties broken by 1st-round points, then 2nd, then onward.
       </p>
 
       {loading && (
