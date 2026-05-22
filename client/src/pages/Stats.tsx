@@ -1,11 +1,12 @@
 /**
  * Nerd Stats — cross-year leaderboard archaeology.
  *
- * Two views stacked:
+ * Three views stacked:
  *   1. Top 10 highest individual scores ever (year + player + score)
- *   2. Per-player aggregates — years played, lowest/highest with year, average
+ *   2. Wall of Shame — top 10 lowest individual scores ever
+ *   3. Per-player aggregates — years played, lowest/highest with year, average
  *
- * Both come from a single GET /api/stats call. Only completed years
+ * All come from a single GET /api/stats call. Only completed years
  * (championship game recorded) factor in — mid-tournament partials would
  * pollute averages.
  */
@@ -36,6 +37,7 @@ interface StatsResponse {
   completeYears: number[];
   totalEntries: number;
   topScores: TopScoreRow[];
+  bottomScores: TopScoreRow[];
   players: PlayerStatsRow[];
 }
 
@@ -119,6 +121,14 @@ export function Stats() {
                 : 'none yet'}
             </span>
             . Mid-tournament partial scores aren't counted.
+            {spansCovid(data.completeYears) && (
+              <>
+                {' '}
+                <span className="font-mono text-paper-faint">
+                  (No tournament in 2020 — cancelled due to COVID-19.)
+                </span>
+              </>
+            )}
           </p>
         )}
       </header>
@@ -176,6 +186,60 @@ export function Stats() {
                         className={
                           'px-4 py-2 text-right font-mono ' +
                           (top ? 'text-gold-400' : 'text-paper')
+                        }
+                      >
+                        {row.score}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {data && data.bottomScores.length > 0 && (
+        <section className="flex flex-col gap-3">
+          <h2 className="font-display text-lg tracking-wider text-maroon-400">
+            Wall of Shame
+          </h2>
+          <p className="-mt-1 text-xs text-paper-faint">
+            The 10 lowest scores ever recorded. No one is safe.
+          </p>
+          <div className="card overflow-x-auto p-0">
+            <table className="w-full text-sm">
+              <thead className="border-b border-ink-700 bg-ink-700/40 font-mono text-[10px] uppercase tracking-widest text-paper-faint">
+                <tr>
+                  <th className="px-4 py-2 text-left">Rank</th>
+                  <th className="px-4 py-2 text-left">Year</th>
+                  <th className="px-4 py-2 text-left">Player</th>
+                  <th className="px-4 py-2 text-right">Score</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.bottomScores.map((row, i) => {
+                  const worst = i === 0;
+                  return (
+                    <tr key={row.entryId} className="border-b border-ink-700 last:border-0">
+                      <td
+                        className={
+                          'px-4 py-2 font-mono ' +
+                          (worst ? 'text-maroon-400' : 'text-paper-dim')
+                        }
+                      >
+                        {String(i + 1).padStart(2, '0')}
+                      </td>
+                      <td className="px-4 py-2 font-mono text-paper">{row.year}</td>
+                      <td className="px-4 py-2">
+                        <span className={worst ? 'font-medium text-maroon-400' : ''}>
+                          {row.displayName}
+                        </span>
+                      </td>
+                      <td
+                        className={
+                          'px-4 py-2 text-right font-mono ' +
+                          (worst ? 'text-maroon-400' : 'text-paper')
                         }
                       >
                         {row.score}
@@ -292,6 +356,17 @@ export function Stats() {
       )}
     </div>
   );
+}
+
+// The 2020 NCAA tournament was cancelled on March 12, 2020 due to COVID-19 —
+// the only time the tournament has ever been cancelled. If our completed-year
+// range straddles 2020, flag it so the year-range "YYYY–YYYY" doesn't read as
+// an unbroken run.
+function spansCovid(years: number[]): boolean {
+  if (years.length < 2) return false;
+  const first = years[0]!;
+  const last = years[years.length - 1]!;
+  return first <= 2019 && last >= 2021;
 }
 
 function SortableTh({

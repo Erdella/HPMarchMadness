@@ -5,8 +5,9 @@
  * AND a recorded championship game (= the year is finished). Computes scores
  * per (entry, year) and aggregates two views:
  *
- *   topScores  — top 10 highest individual entry scores ever
- *   players    — per display-name: years played, low/high (with year), average
+ *   topScores    — top 10 highest individual entry scores ever
+ *   bottomScores — top 10 lowest individual entry scores ever ("Wall of Shame")
+ *   players      — per display-name: years played, low/high (with year), average
  *
  * Display name is the grouping key (lowercased + trimmed). Past entries
  * imported by admin all share the admin's email, so user_id isn't a useful
@@ -117,6 +118,17 @@ statsRoutes.get('/', async (c) => {
       entryId: s.entryId,
     }));
 
+  // Bottom 10 individual scores — the Wall of Shame. Ties broken by older year first.
+  const bottomScores: TopScoreRow[] = [...scored]
+    .sort((a, b) => a.score - b.score || a.year - b.year)
+    .slice(0, 10)
+    .map((s) => ({
+      year: s.year,
+      displayName: s.displayName,
+      score: s.score,
+      entryId: s.entryId,
+    }));
+
   // Aggregate per display name (case-insensitive).
   const byKey = new Map<string, ScoredEntry[]>();
   for (const s of scored) {
@@ -163,6 +175,7 @@ statsRoutes.get('/', async (c) => {
     completeYears: Array.from(completeYears).sort((a, b) => a - b),
     totalEntries: scored.length,
     topScores,
+    bottomScores,
     players,
   });
 });

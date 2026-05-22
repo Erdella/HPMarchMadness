@@ -5,7 +5,7 @@ import './index.css';
 
 // Build marker — bump this to force a new bundle hash if CF Pages serves a
 // stale/corrupt content-addressed asset. (See deploy notes in DEPLOY.md.)
-const BUILD_ID = '2026-05-21-009-round-labels';
+const BUILD_ID = '2026-05-22-011-covid-note';
 console.log(`HP March Madness build ${BUILD_ID}`);
 
 const rootEl = document.getElementById('root');
