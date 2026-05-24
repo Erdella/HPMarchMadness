@@ -51,7 +51,7 @@ export function AboutHenry() {
           </p>
           <p className="font-mono text-[11px] uppercase tracking-widest text-paper-faint">
             <a
-              href="http://articles.latimes.com/2009/apr/17"
+              href="https://www.latimes.com/archives/la-xpm-2009-apr-17-sp-streeter-adenhart17-story.html"
               target="_blank"
               rel="noreferrer"
               className="hover:text-gold-400"
