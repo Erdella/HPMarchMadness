@@ -32,31 +32,35 @@ export function Layout() {
             </span>
           </Link>
 
-          {status === 'authenticated' && (
-            <nav className="ml-auto flex items-center gap-4 text-sm">
-              <NavTab to="/draft" label="Draft" />
-              <NavTab to="/leaderboard" label="Leaderboard" />
-              <NavTab to="/stats" label="Nerd stats" />
-              {isAdmin && <NavTab to="/admin" label="Admin" />}
-              {availableYears.length > 1 && (
-                <YearSelector
-                  selectedYear={selectedYear}
-                  options={availableYears}
-                  onChange={setYear}
-                />
-              )}
-              <span className="hidden font-mono text-xs text-paper-faint sm:inline">
-                {user?.email}
-              </span>
-              <button
-                type="button"
-                className="rounded-sm border border-ink-700 px-3 py-1 font-mono text-xs uppercase tracking-wider text-paper-dim transition-colors hover:bg-ink-700"
-                onClick={() => void signOut()}
-              >
-                Sign out
-              </button>
-            </nav>
-          )}
+          <nav className="ml-auto flex items-center gap-4 text-sm">
+            {/* Public tab — visible whether or not the user is signed in. */}
+            <NavTab to="/about-henry" label="About Henry" />
+            {status === 'authenticated' && (
+              <>
+                <NavTab to="/draft" label="Draft" />
+                <NavTab to="/leaderboard" label="Leaderboard" />
+                <NavTab to="/stats" label="Nerd stats" />
+                {isAdmin && <NavTab to="/admin" label="Admin" />}
+                {availableYears.length > 1 && (
+                  <YearSelector
+                    selectedYear={selectedYear}
+                    options={availableYears}
+                    onChange={setYear}
+                  />
+                )}
+                <span className="hidden font-mono text-xs text-paper-faint sm:inline">
+                  {user?.email}
+                </span>
+                <button
+                  type="button"
+                  className="rounded-sm border border-ink-700 px-3 py-1 font-mono text-xs uppercase tracking-wider text-paper-dim transition-colors hover:bg-ink-700"
+                  onClick={() => void signOut()}
+                >
+                  Sign out
+                </button>
+              </>
+            )}
+          </nav>
         </div>
         {isViewingHistory && status === 'authenticated' && (
           <div className="border-t border-maroon-700 bg-maroon-700/30 px-4 py-1.5 text-center font-mono text-[10px] uppercase tracking-widest text-gold-400 sm:px-6">
@@ -78,7 +82,11 @@ export function Layout() {
           className="text-gold-400 hover:underline"
         >
           {config.donationRecipient.name}
-        </a>
+        </a>{' '}
+        ·{' '}
+        <Link to="/about-henry" className="text-gold-400 hover:underline">
+          About Henry
+        </Link>
       </footer>
     </div>
   );

@@ -15,6 +15,7 @@ import { RequireAuth } from './components/RequireAuth';
 import { AuthProvider } from './lib/auth';
 import { ConfigGate, ConfigProvider } from './lib/config';
 import { YearProvider } from './lib/year';
+import { AboutHenry } from './pages/AboutHenry';
 import { Admin } from './pages/Admin';
 import { AuthLanding } from './pages/AuthLanding';
 import { Draft } from './pages/Draft';
@@ -34,6 +35,7 @@ export function App() {
               <Route element={<Layout />}>
                 <Route path="/login" element={<Login />} />
                 <Route path="/auth/landing" element={<AuthLanding />} />
+                <Route path="/about-henry" element={<AboutHenry />} />
 
                 <Route
                   path="/"
