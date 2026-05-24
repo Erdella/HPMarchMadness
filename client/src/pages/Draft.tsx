@@ -31,10 +31,20 @@ import {
   computeBucketCounts,
   type BucketCount,
 } from '../lib/pickValidation';
-import type { Entry, PaymentMethod, Region, Team } from '../lib/types';
+import type { BracketSide, Entry, PaymentMethod, Region, Team } from '../lib/types';
 import { useYear } from '../lib/year';
 
 const REGIONS: readonly Region[] = ['South', 'West', 'Midwest', 'East'];
+const SIDES: readonly BracketSide[] = ['Left', 'Right'];
+
+/**
+ * How the team picker is grouped. Both modes pick from the same 64 teams under
+ * the same bucket caps; only the visible grouping changes. "region" is the
+ * traditional layout (one region tab at a time). "seed" lets you draft across
+ * regions one bucket at a time — handy if you tend to think "give me my four
+ * #1 seeds first" rather than "fill out the South first."
+ */
+type DraftMode = 'region' | 'seed';
 
 export function Draft() {
   const config = useConfig();
@@ -50,6 +60,13 @@ export function Draft() {
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [activeRegion, setActiveRegion] = useState<Region>('South');
+  const [mode, setMode] = useState<DraftMode>('region');
+  // Seeded from the first bucket once config has loaded. We initialize lazily
+  // so the very first render doesn't end up with an empty active id that
+  // momentarily filters to zero teams.
+  const [activeBucketId, setActiveBucketId] = useState<string>(
+    () => config.seedBuckets[0]?.id ?? '',
+  );
   const [picks, setPicks] = useState<Set<string>>(new Set());
   const [displayName, setDisplayName] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('venmo');
@@ -138,6 +155,29 @@ export function Draft() {
     () => computeBucketCounts(picks, teamMap, config.seedBuckets),
     [picks, teamMap, config.seedBuckets],
   );
+
+  // Which teams the picker is currently showing. In region mode this is just
+  // the four-seed-per-region slice we've always had; in seed mode it's all
+  // teams from the active bucket (4, 8, 16, 16, or 20 teams) across regions.
+  // Declared up here (not next to the JSX) so the hook order stays stable
+  // across the `if (loading) return …` early returns below.
+  const activeTeams = useMemo(() => {
+    if (mode === 'region') {
+      return teams
+        .filter((t) => t.region === activeRegion)
+        .sort((a, b) => a.seed - b.seed || a.name.localeCompare(b.name));
+    }
+    const bucket = config.seedBuckets.find((b) => b.id === activeBucketId);
+    const seedSet = new Set(bucket?.seeds ?? []);
+    return teams
+      .filter((t) => seedSet.has(t.seed))
+      .sort(
+        (a, b) =>
+          a.seed - b.seed ||
+          a.region.localeCompare(b.region) ||
+          a.name.localeCompare(b.name),
+      );
+  }, [mode, activeRegion, activeBucketId, teams, config.seedBuckets]);
 
   const canSubmit =
     !submitting &&
@@ -260,10 +300,6 @@ export function Draft() {
     );
   }
 
-  const activeTeams = teams
-    .filter((t) => t.region === activeRegion)
-    .sort((a, b) => a.seed - b.seed || a.name.localeCompare(b.name));
-
   return (
     <div className="flex flex-col gap-6 py-2">
       <header className="flex flex-col gap-2">
@@ -312,13 +348,31 @@ export function Draft() {
 
       <BucketStrip counts={bucketCounts} buckets={config.seedBuckets} />
 
-      <RegionTabs active={activeRegion} onChange={setActiveRegion} />
+      <BracketBalance
+        picks={picks}
+        teamMap={teamMap}
+        teams={teams}
+        totalRequired={config.totalPicksRequired}
+      />
+
+      <ModeToggle mode={mode} onChange={setMode} />
+
+      {mode === 'region' ? (
+        <RegionTabs active={activeRegion} onChange={setActiveRegion} />
+      ) : (
+        <SeedBucketTabs
+          buckets={config.seedBuckets}
+          active={activeBucketId}
+          onChange={setActiveBucketId}
+        />
+      )}
 
       <TeamGrid
         teams={activeTeams}
         picks={picks}
         bucketCounts={bucketCounts}
         buckets={config.seedBuckets}
+        showRegion={mode === 'seed'}
         onToggle={togglePick}
       />
 
@@ -556,12 +610,16 @@ function TeamGrid({
   picks,
   bucketCounts,
   buckets,
+  showRegion,
   onToggle,
 }: {
   teams: Team[];
   picks: ReadonlySet<string>;
   bucketCounts: readonly BucketCount[];
   buckets: readonly { id: string; label: string; seeds: number[]; pickCount: number }[];
+  // True when teams from multiple regions are being displayed together (seed
+  // mode), so each card needs a region badge to keep structural context.
+  showRegion: boolean;
   onToggle(team: Team): void;
 }) {
   return (
@@ -585,12 +643,233 @@ function TeamGrid({
             <span className="font-mono text-[10px] tracking-widest text-paper-faint">
               {String(team.seed).padStart(2, '0')}
             </span>
+            {showRegion && (
+              <span className="font-mono text-[10px] uppercase tracking-widest text-paper-faint">
+                {team.region.slice(0, 3)}
+              </span>
+            )}
             <span className="flex-1 truncate font-medium">{team.name}</span>
             {selected && <span className="font-mono text-[10px]">✓</span>}
           </button>
         );
       })}
     </div>
+  );
+}
+
+function ModeToggle({
+  mode,
+  onChange,
+}: {
+  mode: DraftMode;
+  onChange(mode: DraftMode): void;
+}) {
+  const options: readonly { id: DraftMode; label: string }[] = [
+    { id: 'region', label: 'Region' },
+    { id: 'seed', label: 'Seed' },
+  ];
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="font-mono text-[10px] uppercase tracking-widest text-paper-faint">
+        Browse by:
+      </span>
+      <div className="inline-flex overflow-hidden rounded-sm border border-ink-700">
+        {options.map((opt) => (
+          <button
+            key={opt.id}
+            type="button"
+            onClick={() => onChange(opt.id)}
+            className={
+              'px-3 py-1.5 font-mono text-xs uppercase tracking-widest transition-colors ' +
+              (mode === opt.id
+                ? 'bg-maroon-500 text-gold-400'
+                : 'text-paper-dim hover:bg-ink-700')
+            }
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SeedBucketTabs({
+  buckets,
+  active,
+  onChange,
+}: {
+  buckets: readonly { id: string; label: string; seeds: number[]; pickCount: number }[];
+  active: string;
+  onChange(id: string): void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-2 border-b border-ink-700 pb-2">
+      {buckets.map((bucket) => (
+        <button
+          key={bucket.id}
+          type="button"
+          className={
+            'rounded-sm px-3 py-1.5 font-mono text-xs uppercase tracking-widest transition-colors ' +
+            (active === bucket.id
+              ? 'bg-maroon-500 text-gold-400'
+              : 'border border-ink-700 text-paper-dim hover:bg-ink-700')
+          }
+          onClick={() => onChange(bucket.id)}
+        >
+          {bucket.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Bracket Balance — a quick visual check for one-sided drafting.
+ *
+ * Shows pick counts on each half of the bracket (Left / Right) and per region,
+ * with maroon callouts when distributions get noticeably skewed:
+ *   - Side warning fires at ≥65% of total picks on one side (≥10 of 15).
+ *   - Region warning fires at ≥40% of total picks in one region (≥6 of 15).
+ *
+ * Thresholds scale with totalRequired so any future change to the pool format
+ * (e.g. dropping to 12 picks) doesn't silently break the panel.
+ *
+ * Hidden until the user makes their first pick so an empty bracket doesn't
+ * scream a warning.
+ */
+function BracketBalance({
+  picks,
+  teamMap,
+  teams,
+  totalRequired,
+}: {
+  picks: ReadonlySet<string>;
+  teamMap: ReadonlyMap<string, Team>;
+  teams: readonly Team[];
+  totalRequired: number;
+}) {
+  // Map each side → the regions assigned to that side this year. Stored in
+  // bracket config (varies year-to-year), so we derive it from the team list
+  // rather than hardcoding.
+  const sideRegions = useMemo(() => {
+    const m: Record<BracketSide, Region[]> = { Left: [], Right: [] };
+    const seen = new Set<string>();
+    for (const t of teams) {
+      const key = `${t.side}-${t.region}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      m[t.side].push(t.region);
+    }
+    return m;
+  }, [teams]);
+
+  const { regionCounts, sideCounts } = useMemo(() => {
+    const region: Record<Region, number> = { South: 0, West: 0, Midwest: 0, East: 0 };
+    const side: Record<BracketSide, number> = { Left: 0, Right: 0 };
+    for (const id of picks) {
+      const t = teamMap.get(id);
+      if (!t) continue;
+      region[t.region] += 1;
+      side[t.side] += 1;
+    }
+    return { regionCounts: region, sideCounts: side };
+  }, [picks, teamMap]);
+
+  if (picks.size === 0) return null;
+
+  const regionWarnAt = Math.max(2, Math.ceil(totalRequired * 0.4)); // 6 of 15
+  const sideWarnAt = Math.max(2, Math.ceil(totalRequired * 0.65)); // 10 of 15
+
+  const heavySide: BracketSide | null =
+    sideCounts.Left >= sideWarnAt
+      ? 'Left'
+      : sideCounts.Right >= sideWarnAt
+        ? 'Right'
+        : null;
+
+  // Region with the highest count, only flagged if at or above the threshold.
+  const topRegion = REGIONS.reduce<{ region: Region; count: number } | null>(
+    (acc, r) => {
+      const count = regionCounts[r];
+      if (!acc || count > acc.count) return { region: r, count };
+      return acc;
+    },
+    null,
+  );
+  const heavyRegion = topRegion && topRegion.count >= regionWarnAt ? topRegion : null;
+
+  return (
+    <section className="flex flex-col gap-3">
+      <div className="flex flex-col gap-0.5">
+        <span className="font-mono text-[11px] uppercase tracking-widest text-gold-400">
+          Bracket balance
+        </span>
+        <p className="text-xs text-paper-dim">
+          A quick visual check for one-sided drafting.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        {SIDES.map((s) => (
+          <div key={s} className="card flex flex-col gap-0.5 py-3">
+            <span className="font-display text-3xl tracking-wider text-gold-400">
+              {sideCounts[s]}
+            </span>
+            <span className="font-mono text-[10px] uppercase tracking-widest text-paper-dim">
+              {s} side picks
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {heavySide && (
+        <div className="card border-maroon-400/40 text-sm text-paper-dim">
+          <span className="font-medium text-maroon-300">
+            Heavy {heavySide.toLowerCase()}-side stack.
+          </span>{' '}
+          Your picks are concentrated in the{' '}
+          <span className="text-paper">{sideRegions[heavySide].join('/')}</span>{' '}
+          half of the bracket.
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-2">
+        {REGIONS.map((r) => {
+          const n = regionCounts[r];
+          const heavy = n >= regionWarnAt;
+          return (
+            <div
+              key={r}
+              className={
+                'card flex items-center justify-between py-3 ' +
+                (heavy ? 'border-maroon-400/60' : '')
+              }
+            >
+              <span className="text-sm text-paper">{r}</span>
+              <span
+                className={
+                  'font-display text-2xl tracking-wider ' +
+                  (heavy ? 'text-maroon-300' : 'text-gold-400')
+                }
+              >
+                {n}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {heavyRegion && (
+        <div className="card border-maroon-400/40 text-sm text-paper-dim">
+          <span className="font-medium text-maroon-300">Heavy regional concentration.</span>{' '}
+          Your picks are consolidated most heavily in{' '}
+          <span className="text-paper">{heavyRegion.region}</span> with{' '}
+          {heavyRegion.count} teams. If that region breaks badly, a large share
+          of your bracket value could disappear quickly.
+        </div>
+      )}
+    </section>
   );
 }
 
